@@ -2,18 +2,20 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkEmoji from 'remark-emoji';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import rehypeRaw from 'rehype-raw';
 import styles from './MarkdownEditor.module.css';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import hljs from 'highlight.js/lib/common';
-import 'highlight.js/styles/github.css';
-import rehypeRaw from 'rehype-raw';
-// import rehypeSanitize, {defaultSchema} from 'rehype-sanitize';
-import remarkEmoji from 'remark-emoji';
-import remarkFootnotes from 'remark-footnotes';
 
+/**
+ * Cleaned Toolbar component.
+ * - Removed highlight.js usage (deprecated)
+ * - Kept react-syntax-highlighter for fenced code blocks
+ * - Keeps marked only for the HTML tab (sanitized)
+ */
 export default function Toolbar({
   storageKey = 'md-editor-draft',
   onUploadImage = null,
@@ -62,6 +64,7 @@ export default function Toolbar({
     redoStack.current = [];
   }, [initialValue, storageKey]);
 
+  // small emoticon map (keeps your functionality)
   const EMOTICON_MAP = [
     [/(?<=\s|^)(?::-\)|:\)|:-D|:D)(?=\s|$)/g, ':smiley:'],
     [/(?<=\s|^)(?::-\(|:\()(?=\s|$)/g, ':disappointed:'],
@@ -71,145 +74,206 @@ export default function Toolbar({
     [/(?<=\s|^)(?::'\(|:'\()(?=\s|$)/g, ':cry:'],
     [/(?<=\s|^)(?::-O|:O)(?=\s|$)/g, ':open_mouth:'],
     [/(?<=\s|^)(?::-\||:\|)(?=\s|$)/g, ':neutral_face:'],
-    // add more mappings as needed
   ];
-
   function convertEmoticonsToShortcodes(text) {
     if (!text) return text;
     let out = text;
     for (const [re, shortcode] of EMOTICON_MAP) {
-      out = out.replace(re, ` ${shortcode} `); // keep spaces so tokens separate
+      out = out.replace(re, ` ${shortcode} `);
     }
     return out;
   }
 
+  // placeholder extraction (protect code while preprocessing)
+  function extractPlaceholders(text) {
+    const fenced = [];
+    const inline = [];
+    text = text.replace(/```[\s\S]*?```/g, (m) => {
+      const idx = fenced.push(m) - 1;
+      return `@@FENCED_CODE_${idx}@@`;
+    });
+    text = text.replace(/`[^`]*`/g, (m) => {
+      const idx = inline.push(m) - 1;
+      return `@@INLINE_CODE_${idx}@@`;
+    });
+    return { text, fenced, inline };
+  }
+  function restorePlaceholders(text, fenced, inline) {
+    text = text.replace(/@@INLINE_CODE_(\d+)@@/g, (_, n) => inline[Number(n)]);
+    text = text.replace(/@@FENCED_CODE_(\d+)@@/g, (_, n) => fenced[Number(n)]);
+    return text;
+  }
+
+  // Preprocess (emoticons, simple extensions). Kept minimal and safe.
   function preprocessMarkdownWithEmoticons(raw) {
     if (!raw) return raw;
   
+    // ------------------------------------------------------------
+    // 0) Protect code blocks & inline code
+    // ------------------------------------------------------------
     const { text: afterExtract, fenced, inline } = extractPlaceholders(raw);
     let s = afterExtract;
   
+    // ------------------------------------------------------------
+    // 1) Emoticon → emoji shortcode
+    // ------------------------------------------------------------
     s = convertEmoticonsToShortcodes(s);
   
-    const footnoteRefs = {};
-    const footnoteDefs = {};
+    // ------------------------------------------------------------
+    // 2) PROTECT inline footnotes  ^[text]
+    // ------------------------------------------------------------
+    const inlineFootnotes = {};
+    let inlineIdx = 0;
+    s = s.replace(/\^\[([\s\S]*?)\]/g, (m) => {
+      const key = `__INLINE_FOOTNOTE_${inlineIdx++}__`;
+      inlineFootnotes[key] = m;
+      return key;
+    });
   
-    // 1) protect [^x]
+    // ------------------------------------------------------------
+    // 3) PROTECT normal footnotes  [^id],  [^id]: text
+    // ------------------------------------------------------------
+    const footnoteRefs = {};
     s = s.replace(/\[\^([^\]]+)\]/g, (m, id) => {
       const key = `__FOOTNOTE_REF_${id}__`;
       footnoteRefs[key] = m;
       return key;
     });
   
-    // 2) protect [^x]: definition
-    s = s.replace(/^\[\^([^\]]+)\]:(.*)$/gm, (m, id, def) => {
+    const footnoteDefs = {};
+    s = s.replace(/^\[\^([^\]]+)\]:(.*)$/gm, (m, id) => {
       const key = `__FOOTNOTE_DEF_${id}__`;
       footnoteDefs[key] = m;
       return key;
     });
   
-    // 3) REMOVE abbreviations
-    s = s.replace(/^\*\[[^\]]+\]:.*$/gm, "");
+    // ------------------------------------------------------------
+    // 4) INLINE TRANSFORMS (that must not break block syntax)
+    // ------------------------------------------------------------
   
-    // 4) Admonitions
-    s = s.replace(/:::\s*(\w+)\s*([\s\S]*?):::/g, (m, type, content) => {
-      const inner = content.trim();
-      return `<div class="admonition ${type.toLowerCase()}">${inner}</div>`;
-    });
+    // ---- Strikethrough (safe)
+    s = s.replace(/~~([\s\S]+?)~~/g, '<del>$1</del>');
   
-    // ⭐ 5) Protect inline ^[text] BEFORE ANY OTHER REGEX
-    const inlineFootnotes = {};
-    let index = 0;
-    s = s.replace(/\^\[([^\]]+)\]/g, (m) => {
-      const key = `__INLINE_FOOTNOTE_${index++}__`;
-      inlineFootnotes[key] = m;
-      return key;
-    });
+    // ---- Underline ++text++ (avoid interfering with ++ used in code)
+    s = s.replace(/\+\+(?=\S)([\s\S]*?\S)\+\+/g, '<u>$1</u>');
   
-    // ⭐⭐⭐ Restore inline footnotes IMMEDIATELY
-    //     (before strikethrough / sup / sub / highlight / definition list)
-    Object.entries(inlineFootnotes).forEach(([k, original]) => {
-      s = s.replace(new RegExp(k, "g"), original);
-    });
+    // ---- Highlight ==text== (must NOT match setext headings)
+    s = s.split("\n").map(line => {
+      const trimmed = line.trim();
+      // do NOT highlight Setext heading underline lines
+      if (/^=+$/.test(trimmed) || /^-+$/.test(trimmed)) {
+        return line;
+      }
+      // normal inline ==highlight==
+      return line.replace(/==(?=\S)([\s\S]*?\S)==/g, "<mark>$1</mark>");
+    }).join("\n");
   
-    // --------- NOW do the rest ---------
+    // ---- Subscript H~2~O (avoid breaking ~~strikethrough~~)
+    s = s.replace(/(^|[^~])~(?=\S)([^~]+?)(?=\S)~(?!~)/g, (m, pre, inner) =>
+      `${pre}<sub>${inner}</sub>`
+    );
   
-    // Strikethrough
-    s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+    // ---- Superscript x^2^ (avoid caret used in footnotes)
+    s = s.replace(/(^|[^\^])\^(?=\S)([^^]+?)(?=\S)\^(?!\^)/g, (m, pre, inner) =>
+      `${pre}<sup>${inner}</sup>`
+    );
   
-    // Subscript
-    s = s.replace(/(^|[^~])~([^~]+)~(?=[^~]|$)/g, (m, pre, inner) => `${pre}<sub>${inner}</sub>`);
-  
-    // Superscript
-    s = s.replace(/(^|[^\^])\^([^^]+)\^(?=[^\^]|$)/g, (m, pre, inner) => `${pre}<sup>${inner}</sup>`);
-  
-    // Underline
-    s = s.replace(/\+\+([^+][\s\S]*?)\+\+/g, (m, inner) => `<u>${inner}</u>`);
-  
-    // Highlight == ==
-    s = s.replace(/==([^=][\s\S]*?)==/g, (m, inner) => `<mark>${inner}</mark>`);
-  
-    // Definition lists (but do NOT touch inline-footnote lines)
-    const lines = s.split("\n");
+    // ------------------------------------------------------------
+    // 5) BLOCK TRANSFORMS (definition lists + admonitions)
+    // ------------------------------------------------------------
+    const lines = s.split('\n');
     const out = [];
     let i = 0;
+  
     while (i < lines.length) {
-      const line = lines[i];
-      // ⛔ IMPORTANT: Skip lines with inline footnotes
-      if (/\^\[[^\]]+\]/.test(line)) {
+      let line = lines[i];
+  
+      // Don't touch lines containing inline footnote placeholder
+      if (/__INLINE_FOOTNOTE_\d+__/.test(line)) {
         out.push(line);
         i++;
         continue;
       }
+  
+      // ---- Definition list (same-line)
       const same = line.match(/^(.+?)\s+~\s+(.+)$/);
       if (same) {
-        out.push(`<dl><dt>${same[1]}</dt><dd>${same[2]}</dd></dl>`);
+        out.push(`<dl><dt>${same[1].trim()}</dt><dd>${same[2].trim()}</dd></dl>`);
         i++;
         continue;
       }
-      if (i + 1 < lines.length && /^\s*[:~]\s*(.+)$/.test(lines[i + 1])) {
-        let dd = RegExp.$1;
-        let j = i + 2;
-        while (j < lines.length && /^\s+/.test(lines[j])) {
-          dd += " " + lines[j].trim();
+  
+      // ---- Definition list (next-line : or ~)
+      if (i + 1 < lines.length) {
+        const next = lines[i + 1].match(/^\s*[:~]\s*(.+)$/);
+        if (next) {
+          let dd = next[1].trim();
+          let j = i + 2;
+  
+          while (j < lines.length && /^\s+/.test(lines[j])) {
+            dd += " " + lines[j].trim();
+            j++;
+          }
+  
+          out.push(`<dl><dt>${line.trim()}</dt><dd>${dd}</dd></dl>`);
+          i = j;
+          continue;
+        }
+      }
+  
+      // ---- Admonition: ::: type ... :::
+      const admOpen = line.match(/^:::\s*(\w+)\s*$/);
+      if (admOpen) {
+        const type = admOpen[1].toLowerCase();
+        let j = i + 1;
+        const block = [];
+  
+        while (j < lines.length && !/^\s*:::\s*$/.test(lines[j])) {
+          block.push(lines[j]);
           j++;
         }
-        out.push(`<dl><dt>${line.trim()}</dt><dd>${dd}</dd></dl>`);
+        if (j < lines.length) j++; // consume closing :::
+  
+        out.push(
+          `<div class="admonition ${type}">${block.join('\n').trim()}</div>`
+        );
         i = j;
         continue;
       }
+  
+      // default line
       out.push(line);
       i++;
     }
-    s = out.join("\n");
-    // --------- Definition list ends ---------
   
-    // Restore footnote refs
+    s = out.join('\n');
+  
+    // ------------------------------------------------------------
+    // 6) RESTORE footnotes
+    // ------------------------------------------------------------
     Object.entries(footnoteRefs).forEach(([k, orig]) => {
-      s = s.replace(new RegExp(k, "g"), orig);
+      s = s.replace(new RegExp(k, 'g'), orig);
     });
-  
-    // Restore footnote definitions
     Object.entries(footnoteDefs).forEach(([k, orig]) => {
-      s = s.replace(new RegExp(k, "g"), orig);
+      s = s.replace(new RegExp(k, 'g'), orig);
     });
   
-    // Restore code placeholders LAST
+    // ------------------------------------------------------------
+    // 7) RESTORE inline ^[text] footnotes
+    // ------------------------------------------------------------
+    Object.entries(inlineFootnotes).forEach(([k, orig]) => {
+      s = s.replace(new RegExp(k, 'g'), orig);
+    });
+  
+    // ------------------------------------------------------------
+    // 8) RESTORE code placeholders
+    // ------------------------------------------------------------
     return restorePlaceholders(s, fenced, inline);
   }
   
-  // marked config for HTML preview
+  
+  // marked -> safe html for HTML tab (no highlight.js used)
   marked.setOptions({
-    highlight: (code, lang) => {
-      try {
-        if (lang && hljs.getLanguage(lang)) {
-          return hljs.highlight(code, { language: lang }).value;
-        }
-        return hljs.highlightAuto(code).value;
-      } catch {
-        return code;
-      }
-    },
     gfm: true,
     breaks: false,
     headerIds: false,
@@ -217,17 +281,13 @@ export default function Toolbar({
     html: true
   });
 
-  // helper: persist draft (debounced)
   function persistDraft(next) {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      try {
-        localStorage.setItem(storageKey, next);
-      } catch {}
+      try { localStorage.setItem(storageKey, next); } catch {}
     }, 500);
   }
 
-  // push history (debounced throttle)
   function pushHistory() {
     const now = Date.now();
     if (now - lastPush.current < 250) return;
@@ -279,7 +339,7 @@ export default function Toolbar({
     replaceSelection(ta, wrapped, left.length, left.length + content.length);
   }
 
-  // block application (#, >, code block)
+  // block helpers (applyBlock, toggleList, indent, etc.) — preserved, unchanged logic
   function applyBlock(type) {
     const ta = editorRef.current;
     if (!ta) return;
@@ -487,24 +547,16 @@ export default function Toolbar({
     setValueInternal(newVal, false);
   }
 
-  // image upload - uses provided onUploadImage if present, else data URL fallback
+  // image upload (local fallback)
   async function handleImageUpload(ev) {
     const file = ev.target.files?.[0];
     if (!file) return;
-    const id = `img_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const id = `img_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
     const alt = file.name || 'image';
-    // If parent supplied uploader, use remote URL
     if (onUploadImage) {
-      try {
-        const remoteUrl = await onUploadImage(file);
-        replaceSelection(editorRef.current, `![${alt}](${remoteUrl})`, 0, 0);
-        ev.currentTarget.value = '';
-        return;
-      } catch (err) {
-        console.warn('server upload failed, falling back to client preview', err);
-      }
+      try { const remoteUrl = await onUploadImage(file); replaceSelection(editorRef.current, `![${alt}](${remoteUrl})`, 0, 0); ev.currentTarget.value=''; return; }
+      catch (err) { console.warn('server upload failed', err); }
     }
-    // local fallback: create object URL
     const objectUrl = URL.createObjectURL(file);
     imageMapRef.current[id] = { url: objectUrl, name: alt };
 
@@ -535,42 +587,24 @@ export default function Toolbar({
       for (const [id, obj] of Object.entries(existing)) {
         imageMapRef.current[id] = { dataUrl: obj.dataUrl, name: obj.name };
       }
-    } catch (err) {
-      // ignore parse errors
-    }
+    } catch (err) {}
   }, []);
 
-
-  // expose for debugging in console: window.__mdImageMap
   React.useEffect(() => { window.__mdImageMap = imageMapRef.current; }, []);
-
   React.useEffect(() => {
     return () => {
       try {
         for (const v of Object.values(imageMapRef.current)) {
           if (v && v.url) URL.revokeObjectURL(v.url);
         }
-      } catch (err) { }
+      } catch (err) {}
     };
   }, []);
 
-
-  // mention / emoji pickers
-  function showMentionPicker() {
-    setShowMentions(true);
-    setMentionQuery('');
-    setMentionFiltered(mentionSuggestions.slice(0, 5));
-  }
-  function pickMention(username) {
-    replaceSelection(editorRef.current, `@${username}`, 0, 0);
-    setShowMentions(false);
-  }
-  function pickEmoji(emoji) {
-    const ta = editorRef.current;
-    if (!ta) return;
-    replaceSelection(ta, emoji, null, null);
-    setShowEmoji(false);
-  }
+  // mentions & emoji
+  function showMentionPicker() { setShowMentions(true); setMentionQuery(''); setMentionFiltered(mentionSuggestions.slice(0,5)); }
+  function pickMention(username) { replaceSelection(editorRef.current, `@${username}`, 0, 0); setShowMentions(false); }
+  function pickEmoji(emoji) { const ta = editorRef.current; if (!ta) return; replaceSelection(ta, emoji, null, null); setShowEmoji(false); }
 
   // undo / redo
   function undo() {
@@ -617,6 +651,7 @@ export default function Toolbar({
     return text;
   }
 
+  // preview input (preprocess minimal transformations)
   const previewInput = React.useMemo(() => preprocessMarkdownWithEmoticons(value), [value]);
 
   // keyboard shortcuts
@@ -631,11 +666,10 @@ export default function Toolbar({
     return () => window.removeEventListener('keydown', onKey);
   }, [value]);
 
-  // keep textarea in sync when value changes externally
-  React.useEffect(() => {
-    if (editorRef.current) editorRef.current.value = value;
-  }, [value]);
+  // keep textarea in sync
+  React.useEffect(() => { if (editorRef.current) editorRef.current.value = value; }, [value]);
 
+  // smooth scrollfootnote click (if applicable)
   React.useEffect(() => {
     function onClick(e) {
       const a = e.target.closest && e.target.closest('a[href^="#fn"]');
@@ -649,78 +683,50 @@ export default function Toolbar({
     root?.addEventListener('click', onClick);
     return () => root?.removeEventListener('click', onClick);
   }, []);
-  
 
   // marked -> safe html
   const dirtyHtml = React.useMemo(() => marked.parse(value || ''), [value]);
+
   const cleanHtml = React.useMemo(() => DOMPurify.sanitize(dirtyHtml), [dirtyHtml]);
 
-  // preview renderer component
+  // Preview renderer (single code renderer only)
   const PreviewRenderer = React.useCallback(() => (
     <div className={styles.preview}>
       <div className={styles.previewContent}>
         <ReactMarkdown
           children={previewInput || 'Nothing to preview'}
-          remarkPlugins={[remarkGfm, remarkEmoji, [remarkFootnotes, { inlineNotes: true }]]}
+          remarkPlugins={[remarkGfm, remarkEmoji]}
           rehypePlugins={[rehypeRaw]}
           components={{
-            img({ node, children, src, alt, title, ...rest }) {
-              // local image handling (localimg://)
+            img({ src, alt, title, ...rest }) {
               if (typeof src === 'string' && src.startsWith('localimg://')) {
                 const id = src.replace('localimg://', '');
                 const map = imageMapRef.current[id];
                 if (map) {
                   const previewSrc = map.dataUrl ?? map.url;
-                  if (!previewSrc) {
-                    console.warn('local image missing for', id, imageMapRef.current);
-                    return <span className={styles.imageStyle}>Image not available</span>;
-                  }
-                  // only spread safe props (rest does NOT include node/children anymore)
-                  return (
-                    <img src={previewSrc} alt={alt || map.name || ''} title={title} className={styles.imageStyle} {...rest} />
-                  );
+                  if (!previewSrc) return <span className={styles.imageStyle}>Image not available</span>;
+                  return <img src={previewSrc} alt={alt || map.name || ''} title={title} className={styles.imageStyle} {...rest} />;
                 }
                 return <span className={styles.imageStyle}>Image not found</span>;
               }
-
-              // normal external image: rest is safe (node/children removed)
-              return (
-                <img src={src} alt={alt} title={title} className={styles.imageStyle} {...rest} />
-              );
+              return <img src={src} alt={alt} title={title} className={styles.imageStyle} {...rest} />;
             },
-            code({ node, inline, className, children, ...props }) {
-              const match = /language-(\w+)/.exec(className || "");
-              return !inline && match ? (
-                <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
-                  {String(children).replace(/\n$/, "")}
-                </SyntaxHighlighter>
-              ) : (
-                <code className={className} {...props}>
-                  {children}
-                </code>
-              );
-            },
-            // ensure blockquote/table have the expected markup/classes
-            blockquote({ children }) {
-              return <blockquote className={styles.previewBlockquote}>{children}</blockquote>;
-            },
-            table({ children }) {
-              return <table className={styles.previewTable}>{children}</table>;
-            },
-            code({ node, inline, className, children, ...props }) {
-              const match = /language-(\w+)/.exec(className || "");
-              if (!inline && match) {
-                // fenced block -> keep syntax highlighter
+            code({ inline, className, children }) {
+              const languageMatch = /language-(\w+)/.exec(className || '');
+              if (!inline && languageMatch) {
+                // fenced code block -> use SyntaxHighlighter
+                const lang = languageMatch[1];
                 return (
-                  <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
-                    {String(children).replace(/\n$/, "")}
+                  <SyntaxHighlighter style={oneDark} language={lang} PreTag="div">
+                    {String(children).replace(/\n$/, '')}
                   </SyntaxHighlighter>
                 );
               }
-              // inline code -> render red
+              // INLINE CODE: render plain <code> and DO NOT spread props (no node attr)
+              // We style it red inline here, or you can use CSS class as shown below.
               return (
                 <code
-                  className={className}
+                  className={className || undefined}
                   style={{
                     color: '#ef4444',
                     background: 'transparent',
@@ -728,23 +734,24 @@ export default function Toolbar({
                     borderRadius: 4,
                     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace'
                   }}
-                  {...props}
                 >
                   {children}
                 </code>
               );
             },
+            blockquote({ children }) { return <blockquote className={styles.previewBlockquote}>{children}</blockquote>; },
+            table({ children }) { return <table className={styles.previewTable}>{children}</table>; }
           }}
         />
       </div>
     </div>
-  ), [value]);
+  ), [previewInput]);
 
   return (
     <div className={`${styles.wrapper} react-issue-comment-composer`}>
       <div className={`${styles.editor} MarkdownEditor-module__container--xSX9w`}>
 
-        {/* header: tabs + toolbar */}
+        {/* header */}
         <div className={styles.header}>
           <div className={styles.tabs}>
             <button className={mode === 'write' ? styles.tabActive : styles.tab} onClick={() => setMode('write')}>Write</button>
@@ -840,12 +847,8 @@ export default function Toolbar({
               onChange={(e) => {
                 const next = e.target.value;
                 setValue(next);
-                // occasional history push while typing
                 const now = Date.now();
-                if (now - lastPush.current > 600) {
-                  undoStack.current.push(next);
-                  lastPush.current = now;
-                }
+                if (now - lastPush.current > 600) { undoStack.current.push(next); lastPush.current = now; }
                 persistDraft(next);
               }}
               placeholder="Write your markdown..."
@@ -854,7 +857,6 @@ export default function Toolbar({
           ) : mode === 'preview' ? (
             <div className={styles.preview}><PreviewRenderer /></div>
           ) : (
-            // html tab
             <div className={styles.preview}>
               <pre style={{whiteSpace:'pre-wrap'}}>{cleanHtml}</pre>
             </div>
