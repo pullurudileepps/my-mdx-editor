@@ -9,6 +9,8 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js/lib/common';
 import 'highlight.js/styles/github.css';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 
 /**
  * Self-contained Markdown Toolbar + Editor
@@ -437,24 +439,36 @@ export default function Toolbar({
 
   // preview renderer component
   const PreviewRenderer = React.useCallback(() => (
-    <ReactMarkdown
-      children={value || 'Nothing to preview'}
-      remarkPlugins={[remarkGfm]}
-      components={{
-        code({ node, inline, className, children, ...props }) {
-          const match = /language-(\w+)/.exec(className || '');
-          return !inline && match ? (
-            <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
-              {String(children).replace(/\n$/, '')}
-            </SyntaxHighlighter>
-          ) : (
-            <code className={className} {...props}>
-              {children}
-            </code>
-          );
-        }
-      }}
-    />
+    <div className={styles.preview}>
+      <div className={styles.previewContent}>
+        <ReactMarkdown
+          children={value || 'Nothing to preview'}
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeRaw, rehypeSanitize]}
+          components={{
+            code({ node, inline, className, children, ...props }) {
+              const match = /language-(\w+)/.exec(className || "");
+              return !inline && match ? (
+                <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
+                  {String(children).replace(/\n$/, "")}
+                </SyntaxHighlighter>
+              ) : (
+                <code className={className} {...props}>
+                  {children}
+                </code>
+              );
+            },
+            // ensure blockquote/table have the expected markup/classes
+            blockquote({ children }) {
+              return <blockquote className={styles.previewBlockquote}>{children}</blockquote>;
+            },
+            table({ children }) {
+              return <table className={styles.previewTable}>{children}</table>;
+            }
+          }}
+        />
+      </div>
+    </div>
   ), [value]);
 
   return (

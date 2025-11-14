@@ -194,3 +194,38 @@
   padding: 2px 6px;
   border-radius: 4px;
 }
+
+/* preview wrapper (used above) */
+.previewContent {
+  padding: 18px;
+  overflow: auto;
+  color: #111827;
+  font-size: 15px;
+}
+
+/* table styling to match marked output */
+.previewTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+.previewTable th,
+.previewTable td {
+  border: 1px solid #e5e7eb;
+  padding: 8px 10px;
+  text-align: left;
+}
+.previewTable th {
+  background: #f9fafb;
+  font-weight: 600;
+}
+
+/* blockquote styling similar to site */
+.previewBlockquote {
+  margin: 0 0 1rem;
+  padding: 12px 18px;
+  border-left: 4px solid #e5e7eb;
+  background: #fafafa;
+  color: #374151;
+  font-style: normal;
+}
