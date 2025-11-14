@@ -1,0 +1,79 @@
+:root{
+  --bg: #f8fafc;
+  --panel-bg: #ffffff;
+  --muted: #6b7280;
+  --border: #dbeafe;
+  --header-bg: #f3f4f6;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+.app-root {
+  min-height: 100vh;
+  background: var(--bg);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  padding: 28px;
+}
+
+/* stack on small screens */
+@media (max-width: 900px) {
+  .app-root { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  height: calc(80vh - 56px);
+  overflow: hidden;
+}
+
+.panel-header {
+  background: var(--header-bg);
+  color: var(--muted);
+  padding: 10px 14px;
+  font-weight: 600;
+  border-bottom: 1px solid #e6e9f2;
+}
+
+.editor-textarea {
+  flex: 1 1 auto;
+  width: 100%;
+  border: none;
+  padding: 16px;
+  font-size: 15px;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  outline: none;
+  resize: none;
+  color: #111827;
+  background: linear-gradient(180deg, #fff, #fff);
+}
+
+.editor-textarea:focus {
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+
+.preview-content {
+  padding: 18px;
+  overflow: auto;
+  color: #111827;
+  font-size: 15px;
+}
+
+/* markdown basics */
+.preview-content h1 { font-size: 1.6rem; margin: .4rem 0; }
+.preview-content p  { margin: .45rem 0; color: #374151; }
+.preview-content pre {
+  background: #0b1221;
+  color: #e6eef6;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0.6rem 0;
+}
+.preview-content code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
