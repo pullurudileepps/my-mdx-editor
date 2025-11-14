@@ -10,21 +10,10 @@ import DOMPurify from 'dompurify';
 import hljs from 'highlight.js/lib/common';
 import 'highlight.js/styles/github.css';
 import rehypeRaw from 'rehype-raw';
-import rehypeSanitize from 'rehype-sanitize';
+// import rehypeSanitize, {defaultSchema} from 'rehype-sanitize';
+import remarkEmoji from 'remark-emoji';
+import remarkFootnotes from 'remark-footnotes';
 
-/**
- * Self-contained Markdown Toolbar + Editor
- * - Manages its own value and autosaves to localStorage
- * - Built-in image upload fallback (data URL)
- * - Write / Preview / HTML tabs
- * - Undo/Redo + keyboard shortcuts
- * - Mentions, emoji, embed, table, highlight, footnotes, task lists, etc.
- *
- * Props (optional):
- * - storageKey: localStorage key to persist draft (default: 'md-editor-draft')
- * - onUploadImage: async fn(file) => url (optional). If not provided, component falls back to data URL.
- * - mentionSuggestions: array of usernames for mentions dropdown
- */
 export default function Toolbar({
   storageKey = 'md-editor-draft',
   onUploadImage = null,
@@ -34,6 +23,7 @@ export default function Toolbar({
   const [value, setValue] = React.useState('');
   const [mode, setMode] = React.useState('write'); // write | preview | html
   const editorRef = React.useRef(null);
+  const imageMapRef = React.useRef({});
 
   // History stacks
   const undoStack = React.useRef([]);
@@ -72,6 +62,142 @@ export default function Toolbar({
     redoStack.current = [];
   }, [initialValue, storageKey]);
 
+  const EMOTICON_MAP = [
+    [/(?<=\s|^)(?::-\)|:\)|:-D|:D)(?=\s|$)/g, ':smiley:'],
+    [/(?<=\s|^)(?::-\(|:\()(?=\s|$)/g, ':disappointed:'],
+    [/(?<=\s|^)(?:8-\)|8\))(?=\s|$)/g, ':sunglasses:'],
+    [/(?<=\s|^)(?:;-\)|;\))(?=\s|$)/g, ':wink:'],
+    [/(?<=\s|^)(?::-P|:P|:p)(?=\s|$)/gi, ':stuck_out_tongue:'],
+    [/(?<=\s|^)(?::'\(|:'\()(?=\s|$)/g, ':cry:'],
+    [/(?<=\s|^)(?::-O|:O)(?=\s|$)/g, ':open_mouth:'],
+    [/(?<=\s|^)(?::-\||:\|)(?=\s|$)/g, ':neutral_face:'],
+    // add more mappings as needed
+  ];
+
+  function convertEmoticonsToShortcodes(text) {
+    if (!text) return text;
+    let out = text;
+    for (const [re, shortcode] of EMOTICON_MAP) {
+      out = out.replace(re, ` ${shortcode} `); // keep spaces so tokens separate
+    }
+    return out;
+  }
+
+  function preprocessMarkdownWithEmoticons(raw) {
+    if (!raw) return raw;
+  
+    const { text: afterExtract, fenced, inline } = extractPlaceholders(raw);
+    let s = afterExtract;
+  
+    s = convertEmoticonsToShortcodes(s);
+  
+    const footnoteRefs = {};
+    const footnoteDefs = {};
+  
+    // 1) protect [^x]
+    s = s.replace(/\[\^([^\]]+)\]/g, (m, id) => {
+      const key = `__FOOTNOTE_REF_${id}__`;
+      footnoteRefs[key] = m;
+      return key;
+    });
+  
+    // 2) protect [^x]: definition
+    s = s.replace(/^\[\^([^\]]+)\]:(.*)$/gm, (m, id, def) => {
+      const key = `__FOOTNOTE_DEF_${id}__`;
+      footnoteDefs[key] = m;
+      return key;
+    });
+  
+    // 3) REMOVE abbreviations
+    s = s.replace(/^\*\[[^\]]+\]:.*$/gm, "");
+  
+    // 4) Admonitions
+    s = s.replace(/:::\s*(\w+)\s*([\s\S]*?):::/g, (m, type, content) => {
+      const inner = content.trim();
+      return `<div class="admonition ${type.toLowerCase()}">${inner}</div>`;
+    });
+  
+    // ⭐ 5) Protect inline ^[text] BEFORE ANY OTHER REGEX
+    const inlineFootnotes = {};
+    let index = 0;
+    s = s.replace(/\^\[([^\]]+)\]/g, (m) => {
+      const key = `__INLINE_FOOTNOTE_${index++}__`;
+      inlineFootnotes[key] = m;
+      return key;
+    });
+  
+    // ⭐⭐⭐ Restore inline footnotes IMMEDIATELY
+    //     (before strikethrough / sup / sub / highlight / definition list)
+    Object.entries(inlineFootnotes).forEach(([k, original]) => {
+      s = s.replace(new RegExp(k, "g"), original);
+    });
+  
+    // --------- NOW do the rest ---------
+  
+    // Strikethrough
+    s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+  
+    // Subscript
+    s = s.replace(/(^|[^~])~([^~]+)~(?=[^~]|$)/g, (m, pre, inner) => `${pre}<sub>${inner}</sub>`);
+  
+    // Superscript
+    s = s.replace(/(^|[^\^])\^([^^]+)\^(?=[^\^]|$)/g, (m, pre, inner) => `${pre}<sup>${inner}</sup>`);
+  
+    // Underline
+    s = s.replace(/\+\+([^+][\s\S]*?)\+\+/g, (m, inner) => `<u>${inner}</u>`);
+  
+    // Highlight == ==
+    s = s.replace(/==([^=][\s\S]*?)==/g, (m, inner) => `<mark>${inner}</mark>`);
+  
+    // Definition lists (but do NOT touch inline-footnote lines)
+    const lines = s.split("\n");
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      // ⛔ IMPORTANT: Skip lines with inline footnotes
+      if (/\^\[[^\]]+\]/.test(line)) {
+        out.push(line);
+        i++;
+        continue;
+      }
+      const same = line.match(/^(.+?)\s+~\s+(.+)$/);
+      if (same) {
+        out.push(`<dl><dt>${same[1]}</dt><dd>${same[2]}</dd></dl>`);
+        i++;
+        continue;
+      }
+      if (i + 1 < lines.length && /^\s*[:~]\s*(.+)$/.test(lines[i + 1])) {
+        let dd = RegExp.$1;
+        let j = i + 2;
+        while (j < lines.length && /^\s+/.test(lines[j])) {
+          dd += " " + lines[j].trim();
+          j++;
+        }
+        out.push(`<dl><dt>${line.trim()}</dt><dd>${dd}</dd></dl>`);
+        i = j;
+        continue;
+      }
+      out.push(line);
+      i++;
+    }
+    s = out.join("\n");
+    // --------- Definition list ends ---------
+  
+    // Restore footnote refs
+    Object.entries(footnoteRefs).forEach(([k, orig]) => {
+      s = s.replace(new RegExp(k, "g"), orig);
+    });
+  
+    // Restore footnote definitions
+    Object.entries(footnoteDefs).forEach(([k, orig]) => {
+      s = s.replace(new RegExp(k, "g"), orig);
+    });
+  
+    // Restore code placeholders LAST
+    return restorePlaceholders(s, fenced, inline);
+  }
+  
   // marked config for HTML preview
   marked.setOptions({
     highlight: (code, lang) => {
@@ -365,23 +491,69 @@ export default function Toolbar({
   async function handleImageUpload(ev) {
     const file = ev.target.files?.[0];
     if (!file) return;
+    const id = `img_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const alt = file.name || 'image';
+    // If parent supplied uploader, use remote URL
     if (onUploadImage) {
       try {
-        const url = await onUploadImage(file);
-        replaceSelection(editorRef.current, `![${file.name}](${url})`, 0, 0);
+        const remoteUrl = await onUploadImage(file);
+        replaceSelection(editorRef.current, `![${alt}](${remoteUrl})`, 0, 0);
+        ev.currentTarget.value = '';
+        return;
       } catch (err) {
-        console.error('upload failed', err);
-        alert('Image upload failed');
+        console.warn('server upload failed, falling back to client preview', err);
       }
-    } else {
+    }
+    // local fallback: create object URL
+    const objectUrl = URL.createObjectURL(file);
+    imageMapRef.current[id] = { url: objectUrl, name: alt };
+
+    // Insert short placeholder into editor
+    replaceSelection(editorRef.current, `![${alt}](localimg://${id})`, 0, 0);
+
+    // Optionally persist small images as data URLs so they survive reload
+    const MAX_LOCALSTORE = 80 * 1024; // 80KB
+    if (file.size <= MAX_LOCALSTORE) {
       const reader = new FileReader();
       reader.onload = () => {
-        replaceSelection(editorRef.current, `![${file.name}](${reader.result})`, 0, 0);
+        try {
+          imageMapRef.current[id].dataUrl = reader.result;
+          const existing = JSON.parse(localStorage.getItem('md-image-map') || '{}');
+          existing[id] = { dataUrl: reader.result, name: alt };
+          localStorage.setItem('md-image-map', JSON.stringify(existing));
+        } catch (err) { console.warn('persist image failed', err); }
       };
       reader.readAsDataURL(file);
     }
     ev.currentTarget.value = '';
   }
+
+
+  React.useEffect(() => {
+    try {
+      const existing = JSON.parse(localStorage.getItem('md-image-map') || '{}');
+      for (const [id, obj] of Object.entries(existing)) {
+        imageMapRef.current[id] = { dataUrl: obj.dataUrl, name: obj.name };
+      }
+    } catch (err) {
+      // ignore parse errors
+    }
+  }, []);
+
+
+  // expose for debugging in console: window.__mdImageMap
+  React.useEffect(() => { window.__mdImageMap = imageMapRef.current; }, []);
+
+  React.useEffect(() => {
+    return () => {
+      try {
+        for (const v of Object.values(imageMapRef.current)) {
+          if (v && v.url) URL.revokeObjectURL(v.url);
+        }
+      } catch (err) { }
+    };
+  }, []);
+
 
   // mention / emoji pickers
   function showMentionPicker() {
@@ -394,7 +566,9 @@ export default function Toolbar({
     setShowMentions(false);
   }
   function pickEmoji(emoji) {
-    replaceSelection(editorRef.current, emoji, 0, 0);
+    const ta = editorRef.current;
+    if (!ta) return;
+    replaceSelection(ta, emoji, null, null);
     setShowEmoji(false);
   }
 
@@ -416,6 +590,35 @@ export default function Toolbar({
     persistDraft(nxt);
   }
 
+  // Put this near the top of your component (after imports) or inside component body
+  function extractPlaceholders(text) {
+    const fenced = [];
+    const inline = [];
+
+    // extract fenced code blocks (```...```)
+    text = text.replace(/```[\s\S]*?```/g, (m) => {
+      const idx = fenced.push(m) - 1;
+      return `@@FENCED_CODE_${idx}@@`;
+    });
+
+    // extract inline code `...` (non-greedy)
+    text = text.replace(/`[^`]*`/g, (m) => {
+      const idx = inline.push(m) - 1;
+      return `@@INLINE_CODE_${idx}@@`;
+    });
+
+    return { text, fenced, inline };
+  }
+
+  function restorePlaceholders(text, fenced, inline) {
+    // restore inline first (they were removed after fenced)
+    text = text.replace(/@@INLINE_CODE_(\d+)@@/g, (_, n) => inline[Number(n)]);
+    text = text.replace(/@@FENCED_CODE_(\d+)@@/g, (_, n) => fenced[Number(n)]);
+    return text;
+  }
+
+  const previewInput = React.useMemo(() => preprocessMarkdownWithEmoticons(value), [value]);
+
   // keyboard shortcuts
   React.useEffect(() => {
     function onKey(e) {
@@ -433,6 +636,21 @@ export default function Toolbar({
     if (editorRef.current) editorRef.current.value = value;
   }, [value]);
 
+  React.useEffect(() => {
+    function onClick(e) {
+      const a = e.target.closest && e.target.closest('a[href^="#fn"]');
+      if (!a) return;
+      e.preventDefault();
+      const id = a.getAttribute('href').slice(1);
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    const root = document.querySelector('.previewContent');
+    root?.addEventListener('click', onClick);
+    return () => root?.removeEventListener('click', onClick);
+  }, []);
+  
+
   // marked -> safe html
   const dirtyHtml = React.useMemo(() => marked.parse(value || ''), [value]);
   const cleanHtml = React.useMemo(() => DOMPurify.sanitize(dirtyHtml), [dirtyHtml]);
@@ -442,10 +660,34 @@ export default function Toolbar({
     <div className={styles.preview}>
       <div className={styles.previewContent}>
         <ReactMarkdown
-          children={value || 'Nothing to preview'}
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeRaw, rehypeSanitize]}
+          children={previewInput || 'Nothing to preview'}
+          remarkPlugins={[remarkGfm, remarkEmoji, [remarkFootnotes, { inlineNotes: true }]]}
+          rehypePlugins={[rehypeRaw]}
           components={{
+            img({ node, children, src, alt, title, ...rest }) {
+              // local image handling (localimg://)
+              if (typeof src === 'string' && src.startsWith('localimg://')) {
+                const id = src.replace('localimg://', '');
+                const map = imageMapRef.current[id];
+                if (map) {
+                  const previewSrc = map.dataUrl ?? map.url;
+                  if (!previewSrc) {
+                    console.warn('local image missing for', id, imageMapRef.current);
+                    return <span className={styles.imageStyle}>Image not available</span>;
+                  }
+                  // only spread safe props (rest does NOT include node/children anymore)
+                  return (
+                    <img src={previewSrc} alt={alt || map.name || ''} title={title} className={styles.imageStyle} {...rest} />
+                  );
+                }
+                return <span className={styles.imageStyle}>Image not found</span>;
+              }
+
+              // normal external image: rest is safe (node/children removed)
+              return (
+                <img src={src} alt={alt} title={title} className={styles.imageStyle} {...rest} />
+              );
+            },
             code({ node, inline, className, children, ...props }) {
               const match = /language-(\w+)/.exec(className || "");
               return !inline && match ? (
@@ -464,7 +706,34 @@ export default function Toolbar({
             },
             table({ children }) {
               return <table className={styles.previewTable}>{children}</table>;
-            }
+            },
+            code({ node, inline, className, children, ...props }) {
+              const match = /language-(\w+)/.exec(className || "");
+              if (!inline && match) {
+                // fenced block -> keep syntax highlighter
+                return (
+                  <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div" {...props}>
+                    {String(children).replace(/\n$/, "")}
+                  </SyntaxHighlighter>
+                );
+              }
+              // inline code -> render red
+              return (
+                <code
+                  className={className}
+                  style={{
+                    color: '#ef4444',
+                    background: 'transparent',
+                    padding: '0 4px',
+                    borderRadius: 4,
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace'
+                  }}
+                  {...props}
+                >
+                  {children}
+                </code>
+              );
+            },
           }}
         />
       </div>
