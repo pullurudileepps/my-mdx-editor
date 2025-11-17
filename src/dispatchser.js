@@ -1,33 +1,46 @@
+// MarkdownEditorConnected.js
 'use client';
 
 import React from 'react';
 import { connect } from 'react-redux';
-
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-
 import TurndownService from 'turndown';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-
-import { getHomePageInfoWiki, updateHomePageWiki } from '../store/actions/ActionProduct';
+import { getHomePageInfoWiki, updateHomePageWiki, setWikiPageFlag } from '../store/actions/ActionProduct'; // adjust path
 import './MarkdownEditor.css';
 
-const turndown = new TurndownService({
-  headingStyle: 'atx',
-  codeBlockStyle: 'fenced'
-});
+const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
 
-class MarkdownEditor extends React.Component {
+/**
+ * Class-based Markdown editor connected to Redux.
+ *
+ * Expects the Redux store to expose:
+ *  state.Product.setHomePageInfoWiki    -> HTML string payload (the HTML saved in DB)
+ *  state.Product.updateWikiPageFlag    -> boolean flag that signals new HTML is available
+ *
+ * And action creators:
+ *  getHomePageInfoWiki()     -> fetch HTML payload and populate store.setHomePageInfoWiki
+ *  updateHomePageWiki(data)  -> save the passed payload ({ homepageInfo: html }) to backend
+ *  setWikiPageFlag(bool)     -> helper to toggle the "new payload" flag
+ *
+ * Flow:
+ *  - componentDidMount(): fetch initial HTML (getHomePageInfoWiki)
+ *  - componentDidUpdate(): when updateWikiPageFlag === true, read HTML from store,
+ *      convert to markdown (turndown) and populate editor; then call setWikiPageFlag(false).
+ *  - handleUpdate(): sanitize HTML and call updateHomePageWiki({ homepageInfo: html })
+ */
+
+class MarkdownEditorConnected extends React.Component {
   constructor(props) {
     super(props);
 
     this.state = {
-      mode: 'write',       // write | preview
-      markdown: '',        // MD input
-      html: '',            // HTML input
-      lastEdited: null     // 'md' | 'html' | null
+      mode: 'write',   // 'write' | 'preview'
+      markdown: '',    // current markdown text
+      html: ''         // current html text (sanitized)
     };
 
     this.handleMarkdownChange = this.handleMarkdownChange.bind(this);
@@ -36,119 +49,108 @@ class MarkdownEditor extends React.Component {
     this.setMode = this.setMode.bind(this);
   }
 
-  // ----------------------------------------------------------
-  // FETCH HTML FROM REDUX STORE ON MOUNT
-  // ----------------------------------------------------------
   componentDidMount() {
-    this.props.getHomePageInfoWiki();
+    // Fetch HTML payload from backend -> store
+    // The action should set state.Product.setHomePageInfoWiki (HTML) and set updateWikiPageFlag true
+    if (typeof this.props.getHomePageInfoWiki === 'function') {
+      this.props.getHomePageInfoWiki();
+    }
   }
 
-  // ----------------------------------------------------------
-  // WHEN NEW HTML COMES FROM STORE → CONVERT TO MARKDOWN
-  // ----------------------------------------------------------
   componentDidUpdate(prevProps) {
-    const newHtml = this.props.homepageInfo;
+    // if the store indicates new HTML payload is ready (flag true), read it and convert to markdown
+    // (This mirrors the flow in the screenshot you shared)
+    const { updateWikiPageFlag, setHomePageInfoWiki } = this.props;
 
-    if (newHtml && newHtml !== prevProps.homepageInfo) {
-      const clean = DOMPurify.sanitize(newHtml, { USE_PROFILES: { html: true } });
+    if (updateWikiPageFlag && updateWikiPageFlag !== prevProps.updateWikiPageFlag) {
+      // sanitize HTML from store first
+      const incomingHtml = setHomePageInfoWiki || '';
+      const cleanHtml = DOMPurify.sanitize(incomingHtml, { USE_PROFILES: { html: true } });
 
-      let mdConverted = '';
+      // convert HTML -> Markdown
+      let md = '';
       try {
-        mdConverted = turndown.turndown(clean);
+        md = turndown.turndown(cleanHtml);
       } catch (err) {
-        console.warn('HTML→MD conversion failed:', err);
+        // fallback: if turndown fails, leave markdown empty or use a simple fallback
+        console.warn('turndown conversion failed', err);
+        md = '';
       }
 
-      this.setState({
-        html: clean,
-        markdown: mdConverted,
-        lastEdited: null
+      // update editor state with the converted values
+      this.setState({ html: cleanHtml, markdown: md }, () => {
+        // after consuming, clear the flag in store so we don't re-process repeatedly
+        if (typeof this.props.setWikiPageFlag === 'function') {
+          this.props.setWikiPageFlag(false);
+        }
       });
     }
   }
 
-  // ----------------------------------------------------------
-  // MARKDOWN CHANGED → UPDATE HTML
-  // ----------------------------------------------------------
+  // Markdown input changed → convert to sanitized HTML (for preview / storage)
   handleMarkdownChange(e) {
     const markdown = e.target.value;
+    // use marked for MD -> HTML
+    const rawHtml = marked.parse(markdown || '');
+    const cleanHtml = DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
 
-    const raw = marked.parse(markdown || '');
-    const clean = DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
-
-    this.setState({
-      markdown,
-      html: clean,
-      lastEdited: 'md'
-    });
+    this.setState({ markdown, html: cleanHtml });
   }
 
-  // ----------------------------------------------------------
-  // HTML CHANGED → UPDATE MARKDOWN
-  // ----------------------------------------------------------
+  // HTML input changed by user → sanitize and convert to markdown using turndown
   handleHtmlChange(e) {
-    const html = DOMPurify.sanitize(e.target.value, { USE_PROFILES: { html: true } });
-
-    let mdConverted = '';
+    const raw = e.target.value || '';
+    const cleanHtml = DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
+    let md = '';
     try {
-      mdConverted = turndown.turndown(html);
+      md = turndown.turndown(cleanHtml);
     } catch (err) {
-      console.warn('HTML→MD failed:', err);
+      console.warn('turndown error', err);
+      md = '';
     }
-
-    this.setState({
-      html,
-      markdown: mdConverted,
-      lastEdited: 'html'
-    });
+    this.setState({ html: cleanHtml, markdown: md });
   }
 
-  // ----------------------------------------------------------
-  // SAVE → DISPATCH REDUX ACTION
-  // ----------------------------------------------------------
+  // Update button clicked -> dispatch save to API via Redux action
   handleUpdate() {
-    const { html } = this.state;
-    this.props.updateHomePageWiki({ homepageInfo: html });
+    const payload = { homepageInfo: this.state.html || '' };
+    if (typeof this.props.updateHomePageWiki === 'function') {
+      this.props.updateHomePageWiki(payload);
+      // the action (on success) should update store.setHomePageInfoWiki and set updateWikiPageFlag true
+      // componentDidUpdate will pick that up and refresh editor content
+    }
   }
 
   setMode(mode) {
     this.setState({ mode });
   }
 
-  // ----------------------------------------------------------
-  // RENDER
-  // ----------------------------------------------------------
   render() {
     const { mode, markdown, html } = this.state;
 
     return (
       <div className="app">
-
-        {/* HEADER */}
         <header className="topbar">
           <div className="tabs">
-            <button
-              className={mode === 'write' ? 'activeTab' : 'tab'}
-              onClick={() => this.setMode('write')}
-            >
-              Write
-            </button>
-
-            <button
-              className={mode === 'preview' ? 'activeTab' : 'tab'}
-              onClick={() => this.setMode('preview')}
-            >
-              Preview
-            </button>
+            <button className={mode === 'write' ? 'activeTab' : 'tab'} onClick={() => this.setMode('write')}>Write</button>
+            <button className={mode === 'preview' ? 'activeTab' : 'tab'} onClick={() => this.setMode('preview')}>Preview</button>
+          </div>
+          {/* right-aligned toolbar select (you asked to show it opposite write/preview) */}
+          <div className="toolbarRight" style={{ marginLeft: 'auto' }}>
+            <select title="Block type" value="normal" readOnly>
+              <option value="normal">Normal</option>
+              <option value="h1">H1</option>
+              <option value="h2">H2</option>
+              <option value="h3">H3</option>
+              <option value="h4">H4</option>
+              <option value="h5">H5</option>
+              <option value="h6">H6</option>
+            </select>
           </div>
         </header>
 
-        {/* MAIN */}
         <main className="main">
-
-          {/* WRITE / PREVIEW */}
           <section className="editorArea">
-
             {mode === 'write' && (
               <textarea
                 className="textarea"
@@ -161,44 +163,43 @@ class MarkdownEditor extends React.Component {
             {mode === 'preview' && (
               <div className="previewWrapper">
                 <ReactMarkdown
-                  children={markdown}
+                  children={markdown || ''}
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[rehypeRaw]}
                 />
               </div>
             )}
-
           </section>
 
-          {/* HTML PANEL */}
           <section className="htmlArea">
             <textarea
               className="htmlTextarea"
               value={html}
               onChange={this.handleHtmlChange}
+              aria-label="HTML output"
             />
-
             <div className="htmlHeader" style={{ justifyContent: 'flex-end' }}>
-              <button className="updateBtn" onClick={this.handleUpdate}>
-                Update
-              </button>
+              <button className="updateBtn" onClick={this.handleUpdate}>Update</button>
             </div>
           </section>
-
         </main>
       </div>
     );
   }
 }
 
-// ----------------------------------------------------------
-// REDUX CONNECTION
-// ----------------------------------------------------------
-const mapState = (state) => ({
-  homepageInfo: state.Product?.setHomePageInfoWiki
+/* ------------------- Redux mapping — match your screenshot's naming ------------------- */
+
+const mapStateToProps = (state) => ({
+  // in your screenshot you used: state.Product.setHomePageInfoWiki and state.Product.updateWikiPageFlag
+  setHomePageInfoWiki: state.Product?.setHomePageInfoWiki,   // the HTML payload
+  updateWikiPageFlag: state.Product?.updateWikiPageFlag      // boolean flag (true when new payload available)
 });
 
-export default connect(mapState, {
-  getHomePageInfoWiki,
-  updateHomePageWiki
-})(MarkdownEditor);
+const mapDispatchToProps = (dispatch) => ({
+  getHomePageInfoWiki: () => dispatch(getHomePageInfoWiki()),
+  updateHomePageWiki: (data) => dispatch(updateHomePageWiki(data)),
+  setWikiPageFlag: (flag) => dispatch(setWikiPageFlag(flag))
+});
+
+export default connect(mapStateToProps, mapDispatchToProps)(MarkdownEditorConnected);
