@@ -19,15 +19,16 @@
     color: #111827;
   }
   
+  /* Topbar */
   .topbar {
     height: 56px;
     display: flex;
     align-items: center;
+    justify-content: space-between;   /* key change */
     padding: 8px 12px;
     border-bottom: 1px solid var(--border);
     background: linear-gradient(90deg,#fff,#fbfdff);
     z-index: 3;
-    justify-content: space-between;
   }
   
   .tabs {
@@ -182,34 +183,45 @@
     font-size: 13px;
   }
   
-  .toolbarRight {
-    display: flex;
-    align-items: flex-end;
-  }
-  
-  /* Block-type dropdown */
-  .toolbarRight select {
-    padding: 8px 12px;
-    font-size: 14px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: #fff;
-    color: #111827;
-    cursor: pointer;
-  }
-
   /* Responsive: stack more vertically on narrow screens */
   @media (max-width: 900px) {
     .editorArea { flex: 0 0 55%; }
     .htmlArea { flex: 1 1 45%; }
-    .topbar { padding: 6px; justify-content: space-between;}
+    .topbar { padding: 6px; }
     .tab, .activeTab { padding: 6px 10px; font-size: 13px; }
-    .toolbarRight select { width: 100%; }
   }
   
   @media (max-width: 520px) {
     .main { padding: 8px; gap: 8px; }
     .textarea { padding: 10px; font-size: 13px; }
     .htmlTextarea { font-size: 12px; padding: 8px; }
+  }
+  
+  .toolbarRight {
+      display: flex;
+      align-items: center;
+  }
+
+  .toolbarRight select {
+      padding: 8px 12px;
+      font-size: 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      color: #111827;
+      cursor: pointer;
+  }
+
+  @media (max-width: 520px) {
+      .topbar {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 10px;
+          height: auto;
+      }
+
+      .toolbarRight select {
+          width: 100%;
+      }
   }
   

@@ -97,6 +97,23 @@ export default function MarkdownEditor({ initialValue = '', onSave = (html) => c
           <button className={mode === 'write' ? styles.activeTab : styles.tab} onClick={() => setMode('write')}>Write</button>
           <button className={mode === 'preview' ? styles.activeTab : styles.tab} onClick={() => setMode('preview')}>Preview</button>
         </div>
+        <div className={styles.toolbarRight}>
+          <select
+            value={"Normal"}
+            title="Block type"
+          >
+            <option value="normal">Normal</option>
+            <option value="h1">H1</option>
+            <option value="h2">H2</option>
+            <option value="h3">H3</option>
+            <option value="h4">H4</option>
+            <option value="h5">H5</option>
+            <option value="h6">H6</option>
+            <option value="blockquote">Quote</option>
+            <option value="code">Inline code</option>
+            <option value="pre">Code block</option>
+          </select>
+        </div>
       </header>
 
       <main className={styles.main}>
