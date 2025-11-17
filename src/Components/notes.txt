@@ -1,0 +1,81 @@
+// turndownSetup.js  (import this where needed)
+import TurndownService from 'turndown';
+import { gfm } from 'turndown-plugin-gfm';
+import { decode } from 'html-entities';
+
+// create a configured turndown instance
+export function createTurndown() {
+  const td = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+    bulletListMarker: '-',
+    emDelimiter: '_',
+    strongDelimiter: '**',
+  });
+
+  // Attach GFM plugin (tables, strikethrough, autolink, task lists)
+  td.use(gfm);
+
+  // 1) Preserve anchor tags that have target or rel (so attrs survive round-trip).
+  //    Return raw <a ...> HTML so markdown -> html round-trip preserves attributes.
+  td.addRule('preserveAnchorWithAttrs', {
+    filter: (node) => {
+      if (node.nodeName !== 'A') return false;
+      const href = node.getAttribute && node.getAttribute('href');
+      // preserve if special attrs exist (target/rel/data-*)
+      return !!href && (
+        node.hasAttribute('target') ||
+        node.hasAttribute('rel') ||
+        Array.from(node.attributes).some(a => a.name.startsWith('data-'))
+      );
+    },
+    replacement: (content, node) => {
+      // build safe attribute string (keep only some attrs)
+      const allowed = ['href','title','target','rel','id','class','data-*'];
+      const attrs = Array.from(node.attributes).map(attr => {
+        // keep data-* and allowed list
+        if (attr.name.startsWith('data-')) return `${attr.name}="${attr.value}"`;
+        if (allowed.includes(attr.name)) return `${attr.name}="${attr.value}"`;
+        return '';
+      }).filter(Boolean).join(' ');
+      return `<a ${attrs}>${content}</a>`;
+    }
+  });
+
+  // 2) Generic inline-unwrap rule: for many inline tags that don't need explicit markup
+  //    (ins, span, font, bdi, u-like but not <strong>/<em>), just return inner text.
+  const INLINE_UNWRAP = new Set(['INS','SPAN','FONT','BDI','BDO','SMALL','S','VAR','KBD','MARK']);
+  td.addRule('unwrapInlineTags', {
+    filter: (node) => {
+      return node.nodeType === 1 && INLINE_UNWRAP.has(node.nodeName);
+    },
+    replacement: (content) => content || ''
+  });
+
+  // 3) Fallback: block-level unknown tags -> convert to their inner HTML block
+  //    (If you prefer to keep them as raw HTML you can return node.outerHTML instead.)
+  td.addRule('blockFallback', {
+    filter: (node) => {
+      if (node.nodeType !== 1) return false;
+      const blockTags = new Set(['DIV','SECTION','ARTICLE','ASIDE','NAV','HEADER','FOOTER','FIGURE']);
+      return blockTags.has(node.nodeName);
+    },
+    replacement: (content, node) => {
+      // keep inner content and ensure separated by double newlines (Markdown block)
+      return `\n\n${content || ''}\n\n`;
+    }
+  });
+
+  // 4) optional: normalize NBSP and decode entities first
+  function htmlToMarkdown(html) {
+    if (!html) return '';
+    // decode entities first (so &amp; &nbsp; etc become characters)
+    let decoded = decode(html);
+    // replace NBSP with normal space (or keep as &nbsp; if you prefer)
+    decoded = decoded.replace(/\u00A0/g, ' ');
+    // return the turndown result
+    return td.turndown(decoded);
+  }
+
+  return { td, htmlToMarkdown };
+}
