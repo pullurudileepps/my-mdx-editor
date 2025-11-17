@@ -579,8 +579,7 @@ export default function Toolbar({
     }
     ev.currentTarget.value = '';
   }
-
-
+  
   React.useEffect(() => {
     try {
       const existing = JSON.parse(localStorage.getItem('md-image-map') || '{}');
@@ -772,68 +771,6 @@ export default function Toolbar({
               <option value="code">Inline code</option>
               <option value="pre">Code block</option>
             </select>
-
-            <button className={styles.toolBtn} title="Bold" onClick={() => toggleWrap('**')}><b>B</b></button>
-            <button className={styles.toolBtn} title="Italic" onClick={() => toggleWrap('*')}><i>I</i></button>
-            <button className={styles.toolBtn} title="Underline" onClick={() => toggleWrap('<u>', '</u>')}><u>U</u></button>
-            <button className={styles.toolBtn} title="Strikethrough" onClick={() => toggleWrap('~~')}><s>S</s></button>
-            <button className={styles.toolBtn} title="Monospace" onClick={() => toggleWrap('`')}><code>code</code></button>
-
-            <button className={styles.toolBtn} title="Superscript" onClick={insertSuperscript}>x²</button>
-            <button className={styles.toolBtn} title="Subscript" onClick={insertSubscript}>H₂O</button>
-
-            <span className={styles.sep} />
-
-            <button className={styles.toolBtn} title="Blockquote" onClick={() => applyBlock('blockquote')}>&quot;</button>
-            <button className={styles.toolBtn} title="Fenced Code" onClick={insertFencedCode}>{'</>'}</button>
-
-            <span className={styles.sep} />
-
-            <button className={styles.toolBtn} title="Bulleted list" onClick={() => toggleList('ul')}>•</button>
-            <button className={styles.toolBtn} title="Numbered list" onClick={() => toggleList('ol')}>1.</button>
-            <button className={styles.toolBtn} title="Task list" onClick={toggleTask}>☐</button>
-
-            <button className={styles.toolBtn} title="Indent" onClick={() => indent(true)}>→</button>
-            <button className={styles.toolBtn} title="Outdent" onClick={() => indent(false)}>←</button>
-
-            <span className={styles.sep} />
-
-            <button className={styles.toolBtn} title="Align left" onClick={() => setAlignment('left')}>Left</button>
-            <button className={styles.toolBtn} title="Align center" onClick={() => setAlignment('center')}>Center</button>
-            <button className={styles.toolBtn} title="Align right" onClick={() => setAlignment('right')}>Right</button>
-            <button className={styles.toolBtn} title="Justify" onClick={() => setAlignment('justify')}>Justify</button>
-
-            <span className={styles.sep} />
-
-            <button className={styles.toolBtn} title="Link (Ctrl/Cmd+K)" onClick={insertLink}>🔗</button>
-            <button className={styles.toolBtn} title="Unlink" onClick={unlink}>⛔</button>
-            <button className={styles.toolBtn} title="Embed" onClick={insertEmbed}>📎</button>
-
-            <span className={styles.sep} />
-
-            <input type="color" title="Text color" value={color} onChange={(e)=>applyColor(e.target.value)} style={{width:26,height:26,border:'none'}} />
-            <select value={fontSize} onChange={(e)=>applyFontSize(e.target.value)} title="Font size">
-              <option value="">Font size</option><option value="12px">12</option><option value="14px">14</option><option value="16px">16</option><option value="18px">18</option><option value="20px">20</option><option value="24px">24</option>
-            </select>
-
-            <span className={styles.sep} />
-
-            <button className={styles.toolBtn} title="Mention" onClick={showMentionPicker}>@</button>
-            <button className={styles.toolBtn} title="Emoji" onClick={() => setShowEmoji(v => !v)}>😊</button>
-
-            <label className={styles.uploadLabel} title="Image upload">
-              <input type="file" accept="image/*" onChange={handleImageUpload} />
-              📷
-            </label>
-
-            <button className={styles.toolBtn} title="Table" onClick={insertTable}>Tbl</button>
-            <button className={styles.toolBtn} title="Horizontal rule" onClick={insertHR}>—</button>
-
-            <span className={styles.sep} />
-
-            <button className={styles.toolBtn} title="Remove selection" onClick={removeSelection}>🗑</button>
-            <button className={styles.toolBtn} title="Undo" onClick={undo}>↶</button>
-            <button className={styles.toolBtn} title="Redo" onClick={redo}>↷</button>
           </div>
         </div>
 

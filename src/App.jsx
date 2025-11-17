@@ -1,15 +1,11 @@
 // App.jsx
 import React from "react";
-import MarkdownEditorExample from "./Components/MarkdownEditorExample";
-import Toolbar from "./Components/Toolbar";
-// import Editor from "./Components/Editor";
+import MarkdownEditor from "./MarkdownEditor";
 
 export default function App() {
   return (
     <>
-     {/* <MarkdownEditorExample /> */}
-     {/* <Editor /> */}
-     <Toolbar />
+     <MarkdownEditor />
     </>
   );
 }

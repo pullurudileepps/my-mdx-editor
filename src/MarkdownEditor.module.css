@@ -1,0 +1,198 @@
+:root{
+    --bg: #ffffff;
+    --muted: #6b7280;
+    --border: #e6e6e6;
+    --accent: #0f62fe;
+    --surface: #f8fafc;
+    --danger: #ef4444;
+  }
+  
+  /* Fill viewport, no big margins */
+  .app {
+    height: 100vh;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    color: #111827;
+  }
+  
+  /* Topbar */
+  .topbar {
+    height: 56px;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(90deg,#fff,#fbfdff);
+    z-index: 3;
+  }
+  
+  .tabs {
+    display: flex;
+    gap: 8px;
+  }
+  
+  .tab, .activeTab {
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  
+  .activeTab {
+    background: #f3f6ff;
+    color: var(--accent);
+    border-color: var(--border);
+  }
+  
+  /* main area uses remaining height */
+  .main {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    height: calc(100vh - 56px);
+    box-sizing: border-box;
+  }
+  
+  /* editor/preview area takes about 58% height; html area bottom takes 42% */
+  .editorArea {
+    flex: 0 0 58%;
+    min-height: 180px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* textarea for writing */
+  .textarea {
+    width: 100%;
+    height: 100%;
+    border: none;
+    padding: 12px;
+    resize: none;
+    outline: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
+    font-size: 14px;
+    box-sizing: border-box;
+    background: transparent;
+    color: #111827;
+  }
+  
+  /* preview wrapper */
+  .previewWrapper {
+    padding: 14px;
+    overflow: auto;
+    height: 100%;
+  }
+  
+  /* rendered HTML block when in HTML tab */
+  .renderedHtml {
+    width: 100%;
+  }
+  
+  /* bottom HTML area */
+  .htmlArea {
+    flex: 1 1 42%;
+    min-height: 150px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-sizing: border-box;
+    background: #fff;
+  }
+  
+  .htmlHeader {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-bottom: 8px;
+  }
+
+  .htmlLabel {
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  
+  /* Update button */
+  .updateBtn {
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: none;
+    background: var(--accent);
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  
+  /* HTML textarea */
+  .htmlTextarea{
+    width: 100%;
+    height: 100%;
+    resize: vertical;
+    min-height: 120px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
+    font-size: 13px;
+    box-sizing: border-box;
+    color:#111827;
+    background: #fbfdff;
+  }
+  
+  /* small preview image style */
+  .previewImg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 6px 0;
+    border-radius: 4px;
+  }
+  
+  /* inline code style (red) */
+  .inlineCode {
+    color: var(--danger);
+    background: transparent;
+    padding: 0 4px;
+    border-radius: 4px;
+    font-family: ui-monospace, "Roboto Mono", monospace;
+  }
+  
+  /* code blocks */
+  .codeBlock {
+    background: #0b1221;
+    color: #e6eef6;
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 13px;
+  }
+  
+  /* Responsive: stack more vertically on narrow screens */
+  @media (max-width: 900px) {
+    .editorArea { flex: 0 0 55%; }
+    .htmlArea { flex: 1 1 45%; }
+    .topbar { padding: 6px; }
+    .tab, .activeTab { padding: 6px 10px; font-size: 13px; }
+  }
+  
+  @media (max-width: 520px) {
+    .main { padding: 8px; gap: 8px; }
+    .textarea { padding: 10px; font-size: 13px; }
+    .htmlTextarea { font-size: 12px; padding: 8px; }
+  }
+  
