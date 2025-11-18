@@ -162,3 +162,206 @@ export default function MarkdownRenderer({ markdown = "" }) {
     />
   );
 }
+***************
+
+
+// GithubMarkdownEditor.jsx
+'use client';
+import React, { useMemo, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import remarkEmoji from 'remark-emoji';
+import remarkRehype from 'remark-rehype';
+
+import rehypeRaw from 'rehype-raw';
+import rehypeSlug from 'rehype-slug';
+import rehypeAutolinkHeadings from 'rehype-autolink-headings';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
+import rehypeStringify from 'rehype-stringify';
+
+import DOMPurify from 'dompurify';
+
+import TurndownService from 'turndown';
+import { gfm } from 'turndown-plugin-gfm';
+
+// Extended sanitize schema to allow target, rel, data-*, aria-* etc.
+const sanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    a: [
+      ...(defaultSchema.attributes?.a || []),
+      ['target'],
+      ['rel'],
+      ['id'],
+      ['aria-hidden'],
+      ['data-sourcepos']
+    ],
+    '*': [
+      ...(defaultSchema.attributes?.['*'] || []),
+      ['class'],
+      ['style'],
+      ['data-*'],
+      ['aria-*']
+    ]
+  }
+};
+
+// --------------------
+// Markdown -> HTML
+// --------------------
+export async function markdownToHtml(markdownString) {
+  // Ensure non-breaking spaces are preserved early if present
+  const normalized = (markdownString ?? '').replace(/\u00A0/g, '&nbsp;');
+
+  const processor = unified()
+    .use(remarkParse)
+    .use(remarkGfm)       // tables, task lists, autolinks, strikethrough, footnotes (GFM)
+    .use(remarkMath)      // optional math support
+    .use(remarkEmoji)     // emoji shortcodes
+    .use(remarkRehype, { allowDangerousHtml: true }) // convert to rehype, keep HTML
+    .use(rehypeRaw)       // parse embedded HTML inside markdown
+    .use(rehypeSlug)      // add id attributes to headings
+    .use(rehypeAutolinkHeadings, { behavior: 'append', properties: { class: 'anchor-link', 'aria-hidden': 'true' } })
+    .use(rehypeSanitize, sanitizeSchema)
+    .use(rehypeStringify);
+
+  const file = await processor.process(normalized);
+  // final sanitize with DOMPurify to be extra safe & ensure target/rel allowed
+  const html = String(file);
+  const clean = DOMPurify.sanitize(html, { ADD_ATTR: ['target', 'rel', 'id', 'aria-hidden'] });
+  // Ensure non-breaking spaces rendered as &nbsp;
+  return clean.replace(/\u00A0/g, '&nbsp;');
+}
+
+// --------------------
+// HTML -> Markdown (Turndown with GFM plugin + rules)
+// --------------------
+export function htmlToMarkdown(htmlString) {
+  const td = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+    linkStyle: 'inlined',
+    bulletListMarker: '-'
+  });
+
+  // add GFM plugin (tables, strikethrough, task lists)
+  td.use(gfm);
+
+  // Keep <ins> content but drop the tag (user asked "not considering <ins>")
+  td.addRule('stripIns', {
+    filter: 'ins',
+    replacement: (content) => content || ''
+  });
+
+  // preserve non-breaking spaces as &nbsp; (we convert back to \u00A0 in md)
+  td.addRule('preserveNbsp', {
+    filter: function (node) {
+      return node.nodeType === 3 && /\u00A0/.test(node.nodeValue || '');
+    },
+    replacement: function (content) {
+      return content.replace(/\u00A0/g, '&nbsp;');
+    }
+  });
+
+  // Allow data-* attributes conversion (no-op here; turndown converts HTML to md)
+  let md = td.turndown(htmlString || '');
+
+  // convert &nbsp; back to literal NBSP (so markdown->html roundtrip can preserve it)
+  md = md.replace(/&nbsp;/g, '\u00A0');
+
+  // trim some trailing whitespace while keeping necessary newlines
+  return md;
+}
+
+// --------------------
+// React functional component with GitHub rendering
+// --------------------
+export default function GithubMarkdownRenderer({
+  markdown = '',
+  // optional callbacks for save/retrieve flows (user will integrate with redux)
+  onSaveHtml = null
+}) {
+  // memoized HTML computed from markdown
+  const html = useMemo(() => {
+    // synchronous wrapper: call markdownToHtml which is async.
+    // We'll run it synchronously with a quick self-invoking async; but since React render must be sync,
+    // useMemo returns placeholder and caller typically will use the helper function directly.
+    // For convenience we call markdownToHtml synchronously by blocking using .then — preferred: caller uses markdownToHtml directly.
+    // Here we return the sanitized output if you already have it precomputed (safe pattern).
+    // BUT most predictable approach: return null and provide explicit helper usage.
+    return null;
+  }, [markdown]);
+
+  // callback to convert markdown -> html (async)
+  const convertMdToHtml = useCallback(async (md) => {
+    return await markdownToHtml(md);
+  }, []);
+
+  // callback to convert html -> markdown (sync)
+  const convertHtmlToMd = useCallback((html) => {
+    return htmlToMarkdown(html);
+  }, []);
+
+  // example onSave wrapper (if onSaveHtml provided)
+  const handleSave = useCallback(async (md) => {
+    const htmlOut = await convertMdToHtml(md);
+    if (typeof onSaveHtml === 'function') onSaveHtml(htmlOut);
+    return htmlOut;
+  }, [convertMdToHtml, onSaveHtml]);
+
+  // Render: We use ReactMarkdown for client-side rendering (fast), but the consumer
+  // may call markdownToHtml() for server or DB storage.
+  const preview = useMemo(() => {
+    // Preprocess replace NBSP before rendering so ReactMarkdown displays them
+    const input = (markdown || '').replace(/\u00A0/g, '&nbsp;');
+    return input;
+  }, [markdown]);
+
+  // custom components for ReactMarkdown: preserve attributes and avoid leaking node prop into DOM elements
+  const components = useMemo(() => ({
+    // generic image: prevent node prop leak
+    img({ src, alt, title, ...rest }) {
+      return <img src={src} alt={alt ?? ''} title={title ?? ''} {...rest} />;
+    },
+    // inline code style (red) and block code handled by SyntaxHighlighter if desired
+    code({ inline, className, children }) {
+      if (inline) {
+        return <code style={{ color: '#ef4444' }}>{children}</code>;
+      }
+      // fallback plain block
+      return <pre><code className={className}>{children}</code></pre>;
+    },
+    // headings: attach anchor wrapper (GitHub-style)
+    h2(props) {
+      const text = String(props.children);
+      const id = 'user-content-' + text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w\-]/g, '');
+      return (
+        <h2 id={id} className="anchor-wrapper">
+          <a className="anchor" aria-hidden="true" href={`#${id}`}></a>
+          {props.children}
+        </h2>
+      );
+    },
+    // allow other tags to keep their props (table, blockquote, etc). You can add more as needed.
+  }), []);
+
+  return (
+    <div className="github-md-renderer">
+      <ReactMarkdown
+        children={preview || ''}
+        remarkPlugins={[remarkGfm, remarkMath, remarkEmoji]}
+        rehypePlugins={[rehypeRaw, rehypeSlug, [rehypeAutolinkHeadings, { behavior: 'append', properties: { class: 'anchor-link', 'aria-hidden': 'true' } }], [rehypeSanitize, sanitizeSchema]]}
+        components={components}
+      />
+      {/* Expose helpers on the DOM for integration testing if required */}
+      <div style={{ display: 'none' }} data-debug-md={markdown} />
+      {/* NOTE: for server-side saving / DB you SHOULD call markdownToHtml(markdown) directly (it returns Promise<string>) */}
+    </div>
+  );
+}
+
