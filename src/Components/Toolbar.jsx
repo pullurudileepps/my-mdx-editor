@@ -368,85 +368,6 @@ export default function Toolbar({
     setBlockType(type);
   }
 
-  // lists
-  function toggleList(type) {
-    const ta = editorRef.current;
-    if (!ta) return;
-    const selStart = ta.selectionStart;
-    const selEnd = ta.selectionEnd;
-    const before = ta.value.slice(0, selStart);
-    const selection = ta.value.slice(selStart, selEnd) || '';
-    const after = ta.value.slice(selEnd);
-    const lines = selection === '' ? [''] : selection.split('\n');
-    let updated;
-    if (type === 'ul') {
-      updated = lines.map(l => (/^\s*[-*+]\s/.test(l) ? l.replace(/^\s*[-*+]\s/, '') : `- ${l}`)).join('\n');
-    } else {
-      const isNumbered = lines.every(l => /^\s*\d+\.\s/.test(l));
-      updated = lines.map((l, i) => (isNumbered ? l.replace(/^\s*\d+\.\s/, '') : `${i+1}. ${l}`)).join('\n');
-    }
-    const newValue = before + updated + after;
-    ta.value = newValue;
-    ta.focus();
-    ta.selectionStart = before.length;
-    ta.selectionEnd = before.length + updated.length;
-    setValueInternal(newValue, false);
-  }
-
-  // indent / outdent
-  function indent(shift = true) {
-    const ta = editorRef.current;
-    if (!ta) return;
-    const selStart = ta.selectionStart;
-    const selEnd = ta.selectionEnd;
-    const before = ta.value.slice(0, selStart);
-    const selection = ta.value.slice(selStart, selEnd) || '';
-    const after = ta.value.slice(selEnd);
-    const lines = selection === '' ? [''] : selection.split('\n');
-    const updated = lines.map(l => shift ? `  ${l}` : l.replace(/^[\t ]{1,2}/, '')).join('\n');
-    const newValue = before + updated + after;
-    ta.value = newValue;
-    ta.focus();
-    ta.selectionStart = before.length;
-    ta.selectionEnd = before.length + updated.length;
-    setValueInternal(newValue, false);
-  }
-
-  // alignment (wrap in HTML div - preview renders it)
-  function setAlignment(align) {
-    const ta = editorRef.current;
-    if (!ta) return;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const sel = ta.value.slice(s, e) || 'text';
-    const wrapped = `<div style="text-align:${align}">${sel}</div>`;
-    replaceSelection(ta, wrapped, 0, wrapped.length);
-  }
-
-  // font size & color (HTML span)
-  function applyFontSize(size) {
-    if (!size) { setFontSize(''); return; }
-    const ta = editorRef.current;
-    if (!ta) return;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const sel = ta.value.slice(s, e) || 'text';
-    const html = `<span style="font-size:${size}">${sel}</span>`;
-    replaceSelection(ta, html, 0, html.length);
-    setFontSize(size);
-  }
-  function applyColor(col) {
-    if (!col) { setColor(''); return; }
-    const ta = editorRef.current;
-    if (!ta) return;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const sel = ta.value.slice(s, e) || 'text';
-    const html = `<span style="color:${col}">${sel}</span>`;
-    replaceSelection(ta, html, 0, html.length);
-    setColor(col);
-  }
-
   // links
   function insertLink() {
     const ta = editorRef.current;
@@ -456,129 +377,7 @@ export default function Toolbar({
     if (!url) return;
     replaceSelection(ta, `[${sel}](${url})`, 1, 1 + sel.length);
   }
-  function unlink() {
-    const ta = editorRef.current;
-    if (!ta) return;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const sel = ta.value.slice(s, e);
-    const re = /\[([^\]]+)\]\(([^)]+)\)/g;
-    const before = ta.value.slice(0, s);
-    const after = ta.value.slice(e);
-    const combined = before + sel + after;
-    const replaced = combined.replace(re, (_, text) => text);
-    if (replaced !== combined) {
-      setValueInternal(replaced, false);
-      ta.value = replaced;
-    }
-  }
 
-  // embed iframe
-  function insertEmbed() {
-    const url = window.prompt('Enter embed URL (iframe src)', 'https://www.youtube.com/embed/...');
-    if (!url) return;
-    const ta = editorRef.current;
-    if (!ta) return;
-    const iframe = `<iframe src="${url}" width="560" height="315" frameborder="0" allowfullscreen></iframe>`;
-    replaceSelection(ta, iframe, 0, iframe.length);
-  }
-
-  // insert table, hr, code block, task toggle, footnote, highlight, sub/super
-  function insertTable() {
-    const ta = editorRef.current;
-    if (!ta) return;
-    const tableMd = `| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |\n`;
-    replaceSelection(ta, tableMd, 0, tableMd.length);
-  }
-  function insertHR() {
-    const ta = editorRef.current;
-    if (!ta) return;
-    replaceSelection(ta, `\n---\n`, 0, 0);
-  }
-  function insertFencedCode() {
-    const ta = editorRef.current;
-    if (!ta) return;
-    const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd) || '';
-    const code = `\n\`\`\`\n${sel}\n\`\`\`\n`;
-    replaceSelection(ta, code, 4, 4 + sel.length);
-  }
-  function toggleTask() {
-    const ta = editorRef.current;
-    if (!ta) return;
-    const selStart = ta.selectionStart;
-    const selEnd = ta.selectionEnd;
-    const before = ta.value.slice(0, selStart);
-    const selection = ta.value.slice(selStart, selEnd) || '';
-    const lines = selection === '' ? [''] : selection.split('\n');
-    const updated = lines.map(l => (/^\s*-\s*\[\s*[ xX]?\s*\]\s/.test(l) ? l.replace(/^\s*-\s*\[\s*[ xX]?\s*\]\s/, '') : `- [ ] ${l}`)).join('\n');
-    const newValue = before + updated + ta.value.slice(selEnd);
-    ta.value = newValue;
-    ta.focus();
-    ta.selectionStart = selStart;
-    ta.selectionEnd = selStart + updated.length;
-    setValueInternal(newValue, false);
-  }
-  function insertFootnote() {
-    const ta = editorRef.current;
-    if (!ta) return;
-    const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd) || 'text';
-    const id = Date.now();
-    const foot = `[^${id}]: footnote text here`;
-    replaceSelection(ta, `${sel}[^${id}]`, 0, 0);
-    const newVal = ta.value + `\n\n${foot}\n`;
-    setValueInternal(newVal, false);
-    ta.value = newVal;
-  }
-  function toggleHighlight() { toggleWrap('==', '=='); }
-  function insertSubscript() { toggleWrap('~', '~'); }
-  function insertSuperscript() { toggleWrap('^', '^'); }
-
-  // remove selection
-  function removeSelection() {
-    const ta = editorRef.current;
-    if (!ta) return;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const before = ta.value.slice(0, s);
-    const after = ta.value.slice(e);
-    const newVal = before + after;
-    ta.value = newVal;
-    ta.selectionStart = ta.selectionEnd = s;
-    setValueInternal(newVal, false);
-  }
-
-  // image upload (local fallback)
-  async function handleImageUpload(ev) {
-    const file = ev.target.files?.[0];
-    if (!file) return;
-    const id = `img_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
-    const alt = file.name || 'image';
-    if (onUploadImage) {
-      try { const remoteUrl = await onUploadImage(file); replaceSelection(editorRef.current, `![${alt}](${remoteUrl})`, 0, 0); ev.currentTarget.value=''; return; }
-      catch (err) { console.warn('server upload failed', err); }
-    }
-    const objectUrl = URL.createObjectURL(file);
-    imageMapRef.current[id] = { url: objectUrl, name: alt };
-
-    // Insert short placeholder into editor
-    replaceSelection(editorRef.current, `![${alt}](localimg://${id})`, 0, 0);
-
-    // Optionally persist small images as data URLs so they survive reload
-    const MAX_LOCALSTORE = 80 * 1024; // 80KB
-    if (file.size <= MAX_LOCALSTORE) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          imageMapRef.current[id].dataUrl = reader.result;
-          const existing = JSON.parse(localStorage.getItem('md-image-map') || '{}');
-          existing[id] = { dataUrl: reader.result, name: alt };
-          localStorage.setItem('md-image-map', JSON.stringify(existing));
-        } catch (err) { console.warn('persist image failed', err); }
-      };
-      reader.readAsDataURL(file);
-    }
-    ev.currentTarget.value = '';
-  }
   
   React.useEffect(() => {
     try {
@@ -599,11 +398,6 @@ export default function Toolbar({
       } catch (err) {}
     };
   }, []);
-
-  // mentions & emoji
-  function showMentionPicker() { setShowMentions(true); setMentionQuery(''); setMentionFiltered(mentionSuggestions.slice(0,5)); }
-  function pickMention(username) { replaceSelection(editorRef.current, `@${username}`, 0, 0); setShowMentions(false); }
-  function pickEmoji(emoji) { const ta = editorRef.current; if (!ta) return; replaceSelection(ta, emoji, null, null); setShowEmoji(false); }
 
   // undo / redo
   function undo() {
@@ -799,28 +593,6 @@ export default function Toolbar({
             </div>
           )}
         </div>
-
-        {/* Emoji picker */}
-        {showEmoji && (
-          <div style={{position:'absolute', zIndex:20, background:'#fff', border:'1px solid #eee', padding:8, borderRadius:8}}>
-            {EMOJIS.map(em => (
-              <button key={em} style={{fontSize:18, padding:6, margin:4}} onClick={() => pickEmoji(em)}>{em}</button>
-            ))}
-            <button onClick={()=>setShowEmoji(false)}>Close</button>
-          </div>
-        )}
-
-        {/* Mentions box */}
-        {showMentions && (
-          <div className={styles.mentionBox}>
-            <input className={styles.mentionInput} value={mentionQuery} onChange={(e)=>setMentionQuery(e.target.value)} placeholder="Search users..." />
-            <ul className={styles.mentionList}>
-              {mentionFiltered.map(u => <li key={u} onClick={() => pickMention(u)}>{u}</li>)}
-            </ul>
-            <button className={styles.mentionClose} onClick={()=>setShowMentions(false)}>Close</button>
-          </div>
-        )}
-
       </div>
     </div>
   );

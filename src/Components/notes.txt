@@ -78,4 +78,87 @@ export function createTurndown() {
   }
 
   return { td, htmlToMarkdown };
+
+}
+***********************
+
+'use client';
+import React from "react";
+import ReactMarkdown from "react-markdown";
+
+import remarkParse from "remark-parse";
+import remarkGfm from "remark-gfm";
+import remarkEmoji from "remark-emoji";
+import remarkMath from "remark-math";
+import remarkRehype from "remark-rehype";
+
+import rehypeRaw from "rehype-raw";
+import rehypeSlug from "rehype-slug";
+import rehypeAutolinkHeadings from "rehype-autolink-headings";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import rehypeStringify from "rehype-stringify";
+import DOMPurify from "dompurify";
+
+// GFM Footnotes (NON-deprecated)
+import { gfmFootnote } from "micromark-extension-gfm-footnote";
+import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";
+
+const schema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    a: [
+      ...(defaultSchema.attributes?.a || []),
+      ["target"],
+      ["rel"],
+      ["aria-hidden"],
+      ["id"]
+    ],
+    "*": [
+      ...(defaultSchema.attributes?.["*"] || []),
+      ["class"],
+      ["style"],
+      ["data-*"],
+      ["aria-*"]
+    ]
+  }
+};
+
+function sanitizeAndFix(html) {
+  const clean = DOMPurify.sanitize(html, { ADD_ATTR: ["target", "rel"] });
+  return clean.replace(/\u00A0/g, "&nbsp;");
+}
+
+export default function MarkdownRenderer({ markdown = "" }) {
+  const input = markdown.replace(/\u00A0/g, "&nbsp;");
+
+  return (
+    <ReactMarkdown
+      children={input}
+      remarkPlugins={[
+        remarkParse,
+        remarkGfm,       // tables, lists, strikethrough, autolinks, footnote refs
+        remarkEmoji,
+        remarkMath,
+      ]}
+      // this is the OFFICIAL 2025 footnote pipeline
+      remarkRehypeOptions={{
+        footnoteLabel: "Footnotes",
+        footnoteBackLabel: "↩",
+        extensions: [gfmFootnote()],
+        mdastExtensions: [gfmFootnoteFromMarkdown()],
+        allowDangerousHtml: true
+      }}
+      rehypePlugins={[
+        rehypeRaw,
+        rehypeSlug,
+        [
+          rehypeAutolinkHeadings,
+          { behavior: "append", properties: { class: "anchor-link" } }
+        ],
+        [rehypeSanitize, schema]
+      ]}
+      transformHtml={(html) => sanitizeAndFix(html)}
+    />
+  );
 }
