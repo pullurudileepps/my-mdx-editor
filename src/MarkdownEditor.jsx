@@ -12,17 +12,50 @@ import styles from './MarkdownEditor.module.css';
  *  - initialValue (string)
  *  - onSave(html) -> called when user clicks Update
  */
-export default function MarkdownEditor({ initialValue = '', onSave = (html) => console.log('save:', html) }) {
+export default function MarkdownEditor() {
   const [mode, setMode] = React.useState('write'); // 'write' | 'preview' | 'html'
-  const [md, setMd] = React.useState(initialValue);
+  const [md, setMd] = React.useState('');
   const [html, setHtml] = React.useState('');
   const editorRef = React.useRef(null);
+  const htmlRef = React.useRef(null);
+  const outerRef = React.useRef(null);
+
+  const onSave = () => {
+    console.log("save")
+  }
 
   // Convert markdown -> sanitized html for HTML textarea
   React.useEffect(() => {
     const raw = marked.parse(md || '');
-    const clean = DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
-    setHtml(clean);
+    const clean = DOMPurify.sanitize(raw);
+
+    // Replace sequences of two or more spaces with a matching number of &nbsp; to preserve spacing in HTML textarea
+    const withNbsp = clean.replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;').replace(/ {2,}/g, m => m.split('').map(() => '&nbsp;').join(''))
+
+    // If markdown is empty, show a placeholder <p></p> only when requested (we'll manage that on blur/click outside)
+    if ((md || '').trim() === '' && html === '<p></p>') {
+      setHtml('<p></p>');
+    } else {
+      setHtml(withNbsp);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [md]);
+
+  // When clicking outside editor/html areas and editor is empty, show <p></p>
+  React.useEffect(() => {
+    function handleDocClick(e) {
+      const target = e.target;
+      console.log(target.value)
+      const insideEditor = editorRef.current && editorRef.current.contains(target);
+      const insideHtml = htmlRef.current && htmlRef.current.contains(target);
+      if (insideEditor && !insideHtml) {
+        if ((md || '').trim() === '') {
+          setHtml('<p></p>');
+        }
+      }
+    }
+    document.addEventListener('click', handleDocClick);
+    return () => document.removeEventListener('click', handleDocClick);
   }, [md]);
 
   // Handler for Update (save to DB)
@@ -31,20 +64,15 @@ export default function MarkdownEditor({ initialValue = '', onSave = (html) => c
     onSave(html);
   }
 
+  // When editor gets focus and html currently shows the placeholder, clear it so user sees fresh HTML update
+  function handleEditorFocus() {
+    if (html === '<p></p>') setHtml('');
+  }
+
   // Minimal safe img renderer example (prevent node prop from ending up on img)
   // If you want localimg:// handling, extend here
+  const imageMapRef = React.useRef({});
   const components = {
-    // img: ({ src, alt, title }) => {
-    //   return <img src={src} alt={alt ?? ''} title={title ?? ''} className={styles.previewImg} />;
-    // },
-    // // Inline code styling (red color)
-    // code({ inline, className, children }) {
-    //   if (inline) {
-    //     return <code className={styles.inlineCode}>{children}</code>;
-    //   }
-    //   return <pre className={styles.codeBlock}><code className={className}>{children}</code></pre>;
-    // }
-
     img({ src, alt, title, ...rest }) {
       if (typeof src === 'string' && src.startsWith('localimg://')) {
         const id = src.replace('localimg://', '');
@@ -61,16 +89,12 @@ export default function MarkdownEditor({ initialValue = '', onSave = (html) => c
     code({ inline, className, children }) {
       const languageMatch = /language-(\w+)/.exec(className || '');
       if (!inline && languageMatch) {
-        // fenced code block -> use SyntaxHighlighter
         const lang = languageMatch[1];
+        // If you use a SyntaxHighlighter component, import it at top and use here.
         return (
-          <SyntaxHighlighter style={oneDark} language={lang} PreTag="div">
-            {String(children).replace(/\n$/, '')}
-          </SyntaxHighlighter>
+          <pre className={styles.codeBlock}><code className={className}>{String(children).replace(/\n$/, '')}</code></pre>
         );
       }
-      // INLINE CODE: render plain <code> and DO NOT spread props (no node attr)
-      // We style it red inline here, or you can use CSS class as shown below.
       return (
         <code
           className={className || undefined}
@@ -91,7 +115,7 @@ export default function MarkdownEditor({ initialValue = '', onSave = (html) => c
   };
 
   return (
-    <div className={styles.app}>
+    <div ref={outerRef} className={styles.app} style={{ height: '100%', overflow: 'auto' }}>
       <header className={styles.topbar}>
         <div className={styles.tabs}>
           <button className={mode === 'write' ? styles.activeTab : styles.tab} onClick={() => setMode('write')}>Write</button>
@@ -116,16 +140,19 @@ export default function MarkdownEditor({ initialValue = '', onSave = (html) => c
         </div>
       </header>
 
-      <main className={styles.main}>
+      <main className={styles.main} style={{ display: 'flex', gap: 12 }}>
         {/* top editor/preview/html area */}
-        <section className={styles.editorArea}>
+        <section className={styles.editorArea} style={{ flex: 1, minWidth: 0 }}>
           {mode === 'write' && (
             <textarea
               ref={editorRef}
               className={styles.textarea}
               value={md}
               onChange={(e) => setMd(e.target.value)}
+              onFocus={handleEditorFocus}
+              onBlur={() => { /* keep logic in document click handler */ }}
               placeholder="Write markdown here..."
+              style={{ width: '100%', height: '100%', resize: 'none', overflow: 'hidden' }}
             />
           )}
 
@@ -141,12 +168,14 @@ export default function MarkdownEditor({ initialValue = '', onSave = (html) => c
           )}
         </section>
 
-        <section className={styles.htmlArea}>
+        <section className={styles.htmlArea} style={{ width: 420, minWidth: 200, display: 'flex', flexDirection: 'column' }}>
           <textarea
+            ref={htmlRef}
             className={styles.htmlTextarea}
             value={html}
             onChange={(e) => setHtml(e.target.value)}
             aria-label="HTML output"
+            style={{ width: '100%', height: '100%', resize: 'none', overflow: 'hidden' }}
           />
           <div className={styles.htmlHeader}>
             <button className={styles.updateBtn} onClick={handleUpdate}>Update</button>
