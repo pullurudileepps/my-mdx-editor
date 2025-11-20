@@ -370,3 +370,165 @@ export default function GithubMarkdownRenderer({
 https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax
 
 
+*****
+
+// sanitize-config.js
+import DOMPurify from 'dompurify';
+
+/**
+ * DOMPurify config: ADD_TAGS and ADD_ATTR extend the allowed list.
+ * Use DOMPurify.sanitize(html, { ADD_TAGS, ADD_ATTR }) or setConfig as shown.
+ */
+
+export const DOMPURIFY_CONFIG = {
+  ADD_TAGS: [
+    // structural / common
+    'article','section','nav','header','footer','main','details','summary',
+
+    // text-level / inline
+    'a','abbr','b','strong','i','em','u','mark','small','sub','sup','code','pre','kbd','samp','var','time',
+
+    // lists / tables
+    'ul','ol','li','dl','dt','dd','table','thead','tbody','tfoot','tr','th','td','caption','col','colgroup',
+
+    // media / embedded
+    'img','figure','figcaption','picture','source','video','audio','iframe',
+
+    // form / interactive (task-lists)
+    'input','label','button','select','option','textarea',
+
+    // structural inline wrappers
+    'div','span','p','blockquote','hr'
+  ],
+  ADD_ATTR: [
+    // global
+    'id','class','style','title','role','data-sourcepos','data-*',
+
+    // links/images
+    'href','src','alt','srcset','sizes','loading','width','height','decoding','crossorigin',
+
+    // anchors
+    'target','rel','download',
+
+    // table attributes
+    'colspan','rowspan','scope',
+
+    // input/form attributes (task lists)
+    'type','checked','disabled','value','name','placeholder','autocomplete','readonly','required','multiple','selected','tabindex',
+
+    // code/pre
+    'lang','language','class', // e.g. class="language-js"
+
+    // aria (explicit common ones; add others as needed)
+    'aria-hidden','aria-label','aria-labelledby','aria-describedby'
+  ],
+  // keep content of removed nodes, if desired
+  KEEP_CONTENT: true
+};
+
+// Example: set global config once
+DOMPurify.setConfig({
+  ADD_TAGS: DOMPURIFY_CONFIG.ADD_TAGS,
+  ADD_ATTR: DOMPURIFY_CONFIG.ADD_ATTR
+});
+
+// Export a helper
+export function cleanHtmlWithDOMPurify(html) {
+  return DOMPurify.sanitize(html, {
+    ADD_TAGS: DOMPURIFY_CONFIG.ADD_TAGS,
+    ADD_ATTR: DOMPURIFY_CONFIG.ADD_ATTR
+  });
+}
+
+***********
+
+// rehypeSanitizeConfig.js
+import { defaultSchema } from 'rehype-sanitize';
+
+/**
+ * Extend the default rehype-sanitize schema to allow input and other tags/attributes.
+ * This is safe because we sanitize after allowing raw HTML (do NOT use allowDangerousHtml without a sanitize step).
+ */
+
+export const rehypeSanitizeSchema = {
+  ...defaultSchema,
+
+  // ensure tagNames contains everything we want
+  tagNames: Array.from(new Set([
+    ...(defaultSchema.tagNames || []),
+    // add tags we want to allow
+    'article','section','nav','header','footer','main','details','summary',
+    'abbr','mark','time','kbd','samp','var',
+    'figure','figcaption','picture','source','video','audio','iframe',
+    'pre','code',
+    'table','thead','tbody','tfoot','tr','th','td','caption','col','colgroup',
+    'input','label','button','select','option','textarea',
+    'div','span','p','blockquote','hr'
+  ])),
+
+  // Attributes: extend/default
+  attributes: {
+    // keep the default attributes for all tags
+    ...(defaultSchema.attributes || {}),
+
+    // global attributes on any tag (rehype uses '*' to denote any tag)
+    '*': [
+      // merge default wildcard attrs (if any) with our extras
+      ...(defaultSchema.attributes && defaultSchema.attributes['*'] ? defaultSchema.attributes['*'] : []),
+      'id','class','style','title','role','data-sourcepos','tabindex'
+    ],
+
+    // anchors
+    a: [
+      ...(defaultSchema.attributes && defaultSchema.attributes.a ? defaultSchema.attributes.a : []),
+      'href','target','rel','download','title'
+    ],
+
+    // images
+    img: [
+      ...(defaultSchema.attributes && defaultSchema.attributes.img ? defaultSchema.attributes.img : []),
+      'src','alt','title','width','height','srcset','sizes','loading','decoding','crossorigin'
+    ],
+
+    // code/pre
+    code: [
+      ...(defaultSchema.attributes && defaultSchema.attributes.code ? defaultSchema.attributes.code : []),
+      'class','language','data-language'
+    ],
+    pre: [
+      ...(defaultSchema.attributes && defaultSchema.attributes.pre ? defaultSchema.attributes.pre : []),
+      'class'
+    ],
+
+    // table cells
+    th: [
+      ...(defaultSchema.attributes && defaultSchema.attributes.th ? defaultSchema.attributes.th : []),
+      'colspan','rowspan','scope'
+    ],
+    td: [
+      ...(defaultSchema.attributes && defaultSchema.attributes.td ? defaultSchema.attributes.td : []),
+      'colspan','rowspan'
+    ],
+
+    // input and form elements (task list)
+    input: [
+      // must explicitly list allowed input attributes
+      'type','checked','disabled','value','name','id','class','tabindex','aria-hidden','aria-label','aria-labelledby'
+    ],
+    label: [
+      'for','class'
+    ],
+    button: [
+      'type','disabled','aria-label','class'
+    ],
+    textarea: [
+      'name','rows','cols','placeholder','readonly','disabled'
+    ],
+    select: [
+      'name','multiple','size'
+    ],
+    option: [
+      'value','selected','disabled'
+    ]
+  }
+};
