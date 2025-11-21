@@ -150,3 +150,16 @@ button.primary {
     cursor: pointer;
     margin: 4px
 }
+
+
+  .autolink-anchor .anchor-text:hover + .anchor-icon {
+    opacity: 1 !important;
+    transform: translateX(0) !important;
+  }
+  
+  .autolink-anchor .anchor-icon:hover {
+    opacity: 1 !important;
+    transform: translateX(0) !important;
+  }
+  
+  

@@ -1,25 +1,76 @@
-// App.jsx
-import React from "react";
-import TurndownMarkdown from "./turndownMarkdown";
+import MarkdownView from "./demo";
+
 
 export default function App() {
-  const htmlString = "<h1 id=\"user-content-react--vite\">React + Vite</h1>\n\
-<p>This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.</p>\n\
-<p>Currently, two official plugins are available:</p>\n\
-<ul>\n\
-<li><a href=\"https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md\" rel=\"noopener\" target=\"_blank\">@vitejs/plugin-react</a> uses <a href=\"https://babeljs.io/\" rel=\"noopener\" target=\"_blank\">Babel</a> for Fast Refresh</li>\n\
-<li><a href=\"https://github.com/vitejs/vite-plugin-react-swc\" rel=\"noopener\" target=\"_blank\">@vitejs/plugin-react-swc</a> uses <a href=\"https://swc.rs/\" rel=\"noopener\" target=\"_blank\">SWC</a> for Fast Refresh</li>\n\
-</ul>\n\
-<h2 id=\"user-content-expanding-the-eslint-configuration\">Expanding the ESLint configuration</h2>\n\
-<p>If you are developing a production application, we recommend using TypeScript and enable type-aware lint rules. Check out the <a href=\"https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts\" rel=\"noopener\" target=\"_blank\">TS template</a> to integrate TypeScript and <a href=\"https://typescript-eslint.io\" rel=\"noopener\" target=\"_blank\"><code>typescript-eslint</code></a> in your project.</p>\n";
+  const md = `
+- [GitLab CI](#gitlab-ci)
+# Online Markdown Editor - The Best Free Markdown Tool 🚀
+
+Experience the **fastest**, *most intuitive*, and ~~hassle-free~~ Markdown editor online!  
+Create and preview Markdown instantly with **GitHub Flavored Markdown (GFM)** support.  
+# ##  
+## ✨ Features of Online Markdown Editor
+
+- **Live Preview**: Instantly see how your Markdown renders  
+- **Auto-save**: Never lose your work with local storage backup  
+- **File Management**: Create, edit, rename, and delete files easily  
+- **Text Formatting**: Supports **bold**, *italic*, ~~strikethrough~~, <sup>superscript</sup>, and <sub>subscript</sub>  
+- **Lists**: Easily create **bullet lists** and **numbered lists**  
+- **Code Blocks**: Format your code with syntax highlighting  
+- **Tables**: Create structured data with Markdown tables  
+- **Mermaid Diagrams**: Visualize concepts with flowcharts and graphs  
+- **Image & Link Insertion**: Easily add images and links  
+- **Print & Download**: Save as a Markdown file or print directly  
+
+---
+
+## 📌 Markdown Syntax Guide  
+
+### Headings  
+
+# H1 - Largest Heading  
+## H2 - Second Largest  
+### H3 - Subheading  
+#### H4 - Smaller Heading  
+##### H5 - Tiny Heading  
+###### H6 - Smallest Heading  
+
+### ✍️ Text Formatting  
+ 
+
+### 📋 Lists  
+
+#### Bullet List  
+- Item 1  
+- Item 2  
+- Item 3  
+
+#### Numbered List  
+1. First Item  
+2. Second Item  
+3. Third Item  
+
+### 🔗 Links & Images  
+
+[Visit Online Markdown Editor](https://onlinemarkdown.com)  
+
+![Markdown Logo](https://upload.wikimedia.org/wikipedia/commons/4/48/Markdown-mark.svg)
+
+### 📝 Blockquotes
+
+> "Markdown is a lightweight markup language for creating formatted text using a plain-text editor."
+– John Gruber
+
+### Code Blocks
+
+
+## GitLab CI
+
+## Boeing`;
 
   return (
-    <>
-      {/* <MarkdownEditor /> */}
-      <textarea style={{width: "100vw", height: "100vh", border: "1px solid red", boxShadow: "inherit"}}>
-        {TurndownMarkdown(htmlString, { preserveHtml: true })}
-      </textarea>
-
-    </>
+    <div>
+      <MarkdownView markdown={md} />
+    </div>
   );
 }
